@@ -1,0 +1,6 @@
+node_modules/
+dist/
+coverage/
+# Real-world .puz files are usually copyrighted; drop them here for local round-trip tests.
+test/fixtures/local/*
+!test/fixtures/local/.gitkeep
