@@ -44,9 +44,9 @@ describe("Puzzle locking", () => {
     const p = Puzzle.fromBytes(fixture("sample-locked-1234.puz"));
     expect(p.checksums.valid).toBe(true);
     expect(p.isScrambled).toBe(true);
-    expect(p.getCell(0).solution).toBeUndefined();
+    expect(p.getSquare(0).solution).toBeUndefined();
     expect(() => p.checkPuzzle()).toThrow(PuzLockedError);
-    expect(() => p.revealCell(0)).toThrow(PuzLockedError);
+    expect(() => p.revealSquare(0)).toThrow(PuzLockedError);
     expect(() => p.isSolved).toThrow(PuzLockedError);
 
     // Entries can still be made while locked.
@@ -88,7 +88,7 @@ describe("Puzzle locking", () => {
     raw.solutionState = 0x0002;
     const p = Puzzle.fromRaw(raw);
     expect(p.hasSolution).toBe(false);
-    expect(p.getCell(0).solution).toBeUndefined();
-    expect(() => p.checkCell(0)).toThrow(/no solution/);
+    expect(p.getSquare(0).solution).toBeUndefined();
+    expect(() => p.checkSquare(0)).toThrow(/no solution/);
   });
 });

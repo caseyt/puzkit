@@ -6,7 +6,7 @@ import type { RawPuz } from "./raw.js";
 
 /** Serialize a {@link RawPuz} to .puz bytes, computing every checksum. */
 export function serializePuz(raw: RawPuz): Uint8Array {
-  const cells = raw.width * raw.height;
+  const squareCount = raw.width * raw.height;
   if (raw.width < 1 || raw.width > 255 || raw.height < 1 || raw.height > 255) {
     throw new PuzError(`Invalid grid size ${raw.width}x${raw.height}`);
   }
@@ -16,8 +16,8 @@ export function serializePuz(raw: RawPuz): Uint8Array {
   const encoding = encodingForVersion(raw.version);
   const solution = encode(raw.solution);
   const state = encode(raw.state);
-  if (solution.length !== cells || state.length !== cells) {
-    throw new PuzError(`Solution and state must each be ${cells} single-byte characters`);
+  if (solution.length !== squareCount || state.length !== squareCount) {
+    throw new PuzError(`Solution and state must each be ${squareCount} single-byte characters`);
   }
   const title = encode(raw.title, encoding);
   const author = encode(raw.author, encoding);

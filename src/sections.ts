@@ -42,12 +42,12 @@ export function serializeRtbl(table: ReadonlyMap<number, string>): Uint8Array {
 /** Parse RUSR: one null-terminated string per square; empty means no user rebus. */
 export function parseRusr(
   data: Uint8Array,
-  cells: number,
+  squareCount: number,
   encoding: PuzEncoding,
 ): (string | undefined)[] {
-  const result: (string | undefined)[] = new Array(cells).fill(undefined);
+  const result: (string | undefined)[] = new Array(squareCount).fill(undefined);
   let pos = 0;
-  for (let i = 0; i < cells && pos < data.length; i++) {
+  for (let i = 0; i < squareCount && pos < data.length; i++) {
     let end = data.indexOf(0, pos);
     if (end < 0) end = data.length;
     if (end > pos) result[i] = decode(data.subarray(pos, end), encoding);

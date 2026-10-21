@@ -52,13 +52,13 @@ export const SolutionState = {
 /**
  * Per-square bit flags stored in the GEXT section.
  */
-export const CellFlag = {
+export const SquareFlag = {
   PREVIOUSLY_INCORRECT: 0x10,
   INCORRECT: 0x20,
   REVEALED: 0x40,
   CIRCLED: 0x80,
 } as const;
-export type CellFlag = (typeof CellFlag)[keyof typeof CellFlag];
+export type SquareFlag = (typeof SquareFlag)[keyof typeof SquareFlag];
 
 /** Well-known extra section titles. */
 export const SectionTitle = {
@@ -68,7 +68,7 @@ export const SectionTitle = {
   RTBL: "RTBL",
   /** Timer: "seconds,state" where state 0 = running, 1 = stopped. */
   LTIM: "LTIM",
-  /** Per-square markup flags, see {@link CellFlag}. */
+  /** Per-square markup flags, see {@link SquareFlag}. */
   GEXT: "GEXT",
   /** User rebus entries: one null-terminated string per square. */
   RUSR: "RUSR",

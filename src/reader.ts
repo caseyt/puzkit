@@ -52,11 +52,12 @@ export function parsePuz(input: Uint8Array, options: ParseOptions = {}): ParseRe
   const numClues = u16(HeaderOffset.NUM_CLUES);
   if (width === 0 || height === 0) throw new PuzParseError(`Invalid grid size ${width}x${height}`);
 
-  const cells = width * height;
+  const squareCount = width * height;
   let pos = HEADER_LENGTH;
-  if (bytes.length < pos + 2 * cells) throw new PuzParseError("File is truncated inside the grid");
-  const solutionBytes = bytes.subarray(pos, (pos += cells));
-  const stateBytes = bytes.subarray(pos, (pos += cells));
+  if (bytes.length < pos + 2 * squareCount)
+    throw new PuzParseError("File is truncated inside the grid");
+  const solutionBytes = bytes.subarray(pos, (pos += squareCount));
+  const stateBytes = bytes.subarray(pos, (pos += squareCount));
 
   const readString = (): Uint8Array => {
     const end = bytes.indexOf(0, pos);

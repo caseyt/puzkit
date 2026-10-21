@@ -11,9 +11,9 @@ describe("computeLayout", () => {
     ]);
   });
 
-  it("finds entries with correct cells, including ones touching the right and bottom edges", () => {
-    const describe = (e: { number: number; cells: readonly number[] }) =>
-      `${e.number}:${e.cells.join(",")}`;
+  it("finds entries with correct squares, including ones touching the right and bottom edges", () => {
+    const describe = (e: { number: number; squares: readonly number[] }) =>
+      `${e.number}:${e.squares.join(",")}`;
     expect(layout.across.map(describe)).toEqual([
       "1:0,1,2,3,4",
       "6:5,6,7,8,9",
@@ -80,11 +80,11 @@ describe("computeLayout", () => {
 
   it("treats ':' as a block for diagramless puzzles", () => {
     const l = computeLayout("AB:CD:", 3, 2);
-    expect(l.across.map((e) => e.cells)).toEqual([
+    expect(l.across.map((e) => e.squares)).toEqual([
       [0, 1],
       [3, 4],
     ]);
-    expect(l.down.map((e) => e.cells)).toEqual([
+    expect(l.down.map((e) => e.squares)).toEqual([
       [0, 3],
       [1, 4],
     ]);
@@ -94,6 +94,6 @@ describe("computeLayout", () => {
     const l = computeLayout("ABCDEFGH", 4, 2);
     expect(l.across).toHaveLength(2);
     expect(l.down).toHaveLength(4);
-    expect(l.down[3]!.cells).toEqual([3, 7]);
+    expect(l.down[3]!.squares).toEqual([3, 7]);
   });
 });

@@ -11,11 +11,11 @@ export interface Entry {
   /** Index within the across or down list. */
   readonly listIndex: number;
   /** Square indices, in reading order. */
-  readonly cells: readonly number[];
+  readonly squares: readonly number[];
 }
 
 /** Static information about a square, derived from the grid shape. */
-export interface SquareInfo {
+export interface SquareLayout {
   readonly index: number;
   readonly row: number;
   readonly col: number;
@@ -29,7 +29,7 @@ export interface SquareInfo {
 }
 
 export interface Layout {
-  readonly squares: readonly SquareInfo[];
+  readonly squares: readonly SquareLayout[];
   readonly across: readonly Entry[];
   readonly down: readonly Entry[];
 }
@@ -59,9 +59,9 @@ export function computeLayout(solution: string, width: number, height: number): 
 
     numberOf[i] = number;
     if (startsAcross) {
-      const cells: number[] = [];
+      const squares: number[] = [];
       for (let c = i; c < row * width + width && !isBlock(c); c++) {
-        cells.push(c);
+        squares.push(c);
         acrossOf[c] = across.length;
       }
       across.push({
@@ -69,21 +69,21 @@ export function computeLayout(solution: string, width: number, height: number): 
         direction: "across",
         index: clueIndex++,
         listIndex: across.length,
-        cells,
+        squares,
       });
     }
     if (startsDown) {
-      const cells: number[] = [];
+      const squares: number[] = [];
       for (let c = i; c < width * height && !isBlock(c); c += width) {
-        cells.push(c);
+        squares.push(c);
         downOf[c] = down.length;
       }
-      down.push({ number, direction: "down", index: clueIndex++, listIndex: down.length, cells });
+      down.push({ number, direction: "down", index: clueIndex++, listIndex: down.length, squares });
     }
     number++;
   }
 
-  const squares: SquareInfo[] = [];
+  const squares: SquareLayout[] = [];
   for (let i = 0; i < width * height; i++) {
     squares.push({
       index: i,

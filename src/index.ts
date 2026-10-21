@@ -1,6 +1,6 @@
 export {
   Puzzle,
-  type Cell,
+  type Square,
   type CheckResult,
   type ClearOptions,
   type Clue,
@@ -11,11 +11,11 @@ export {
   type Timer,
   type WriteOptions,
 } from "./puzzle.js";
-export type { Direction, Entry, Layout, SquareInfo } from "./grid.js";
+export type { Direction, Entry, Layout, SquareLayout } from "./grid.js";
 export { computeLayout } from "./grid.js";
 export {
   BLOCK,
-  CellFlag,
+  SquareFlag,
   DIAGRAMLESS_BLOCK,
   EMPTY,
   PuzzleType,

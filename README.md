@@ -43,7 +43,7 @@ console.log(puzzle.width, puzzle.height); // 15 15
 
 const clue = puzzle.getClue("across", 1)!;
 console.log(clue.text); // "Prepares for a busy evening, maybe"
-console.log(clue.cells); // [0, 1, 2, 3]  (square indexes)
+console.log(clue.squares); // [0, 1, 2, 3]  (square indexes)
 
 puzzle.setSquareValue(0, "D"); // fill square 0
 puzzle.setSquareValue(puzzle.toIndex({ row: 0, col: 1 }), "E"); // fill row 0, column 1
@@ -51,7 +51,7 @@ puzzle.setSquareValue(puzzle.toIndex({ row: 0, col: 1 }), "E"); // fill row 0, c
 const result = puzzle.checkClue({ direction: "across", number: 1 });
 console.log(result.incorrect); // indexes of wrong squares, e.g. [1]
 
-puzzle.revealCell(1);
+puzzle.revealSquare(1);
 puzzle.startTimer();
 
 await writePuzzleFile("monday.puz", puzzle);
@@ -61,23 +61,28 @@ await writePuzzleFile("monday.puz", puzzle);
 
 ## Key concepts
 
-**Squares** 
+**Squares**
+
 - The grid has `width × height` squares, numbered row by row from `0`.
 - The square at `row`, `col` has index `row * width + col`.
 
-**Values** 
+**Values**
+
 - A square's value is a string.
 - An empty square is `""`.
 - A value longer than one letter (like `"STAR"`) is a _rebus_ entry.
 
-**Blocks** 
+**Blocks**
+
 - Black squares are called blocks.
 - They have no value, are skipped by check and reveal functions, and `setSquareValue` on a block does nothing.
 
-**Clues** 
+**Clues**
+
 - A clue is identified by its `direction` (`"across"` or `"down"`) and its printed `number`.
 
-**Mutability** 
+**Mutability**
+
 - A `Puzzle` is changed in place: `setSquareValue`, `checkPuzzle` and the other modifying methods do not return a new puzzle.
 - Call `puzzle.clone()` when you need a separate copy, for example to put a new object into React state.
 
@@ -91,19 +96,19 @@ All loaders return a new `Puzzle`. Loading is lenient: a file with wrong checksu
 
 | Method                                | Input                                                                                                                 | Returns           |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `Puzzle.fromBytes(input, options?)`   | `input`: puz file as a `Uint8Array`, Node `Buffer`, `ArrayBuffer` or `DataView`                                 | `Puzzle`          |
-| `Puzzle.fromBase64(base64, options?)` | `base64`: puz file as a base64 string (standard or URL-safe; whitespace is ignored)                             | `Puzzle`          |
+| `Puzzle.fromBytes(input, options?)`   | `input`: puz file as a `Uint8Array`, Node `Buffer`, `ArrayBuffer` or `DataView`                                       | `Puzzle`          |
+| `Puzzle.fromBase64(base64, options?)` | `base64`: puz file as a base64 string (standard or URL-safe; whitespace is ignored)                                   | `Puzzle`          |
 | `Puzzle.fromStream(source, options?)` | `source`: a web `ReadableStream<Uint8Array>`, a Node.js `Readable`, or any sync/async iterable of `Uint8Array` chunks | `Promise<Puzzle>` |
-| `Puzzle.fromRaw(raw, options?)`       | `raw`: a [`RawPuz`](#rawpuz) object                                                          | `Puzzle`          |
+| `Puzzle.fromRaw(raw, options?)`       | `raw`: a [`RawPuz`](#rawpuz) object                                                                                   | `Puzzle`          |
 | `Puzzle.create(options)`              | `options`: a [`CreatePuzzleOptions`](#createpuzzleoptions) object                                                     | `Puzzle`          |
 
 `options` for the first three is a `ReadOptions` object:
 
-| Option   | Type      | Default      | Meaning                                                                                         |
-| -------- | --------- | ------------ | ----------------------------------------------------------------------------------------------- |
-| `strict` | `boolean` | `false`      | Throw `PuzChecksumError` if any checksum is wrong, and `PuzParseError` if a section is cut off. |
-| `now`    | `number`  | `Date.now()` | If the file's timer was saved as running, it counts from this time.                             |
-`Puzzle.create` builds a new, empty puzzle from a solution grid and clues:
+| Option                                                                     | Type      | Default      | Meaning                                                                                         |
+| -------------------------------------------------------------------------- | --------- | ------------ | ----------------------------------------------------------------------------------------------- |
+| `strict`                                                                   | `boolean` | `false`      | Throw `PuzChecksumError` if any checksum is wrong, and `PuzParseError` if a section is cut off. |
+| `now`                                                                      | `number`  | `Date.now()` | If the file's timer was saved as running, it counts from this time.                             |
+| `Puzzle.create` builds a new, empty puzzle from a solution grid and clues: |
 
 ```ts
 const puzzle = Puzzle.create({
@@ -118,13 +123,13 @@ const puzzle = Puzzle.create({
 
 ### Saving
 
-| Method                      | Returns                      | Notes                                                                                    |
-| --------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
-| `puzzle.toBytes(options?)`  | `Uint8Array`                 | The `.puz` file.                                                                |
-| `puzzle.toBase64(options?)` | `string`                     | The `.puz` file, base64 encoded.                                                |
-| `puzzle.toStream(options?)` | `ReadableStream<Uint8Array>` | Web stream. |
-| `puzzle.toRaw(options?)`    | [`RawPuz`](#rawpuz)          | Plain object form of the file, with no checksums.                                        |
-| `puzzle.clone()`            | `Puzzle`                     | A fully independent copy, including a running timer.                                     |
+| Method                      | Returns                      | Notes                                                |
+| --------------------------- | ---------------------------- | ---------------------------------------------------- |
+| `puzzle.toBytes(options?)`  | `Uint8Array`                 | The `.puz` file.                                     |
+| `puzzle.toBase64(options?)` | `string`                     | The `.puz` file, base64 encoded.                     |
+| `puzzle.toStream(options?)` | `ReadableStream<Uint8Array>` | Web stream.                                          |
+| `puzzle.toRaw(options?)`    | [`RawPuz`](#rawpuz)          | Plain object form of the file, with no checksums.    |
+| `puzzle.clone()`            | `Puzzle`                     | A fully independent copy, including a running timer. |
 
 `options` is `{ now?: number }`: the time used to work out a running timer's value.
 
@@ -155,8 +160,8 @@ puzzle.checksums;
 | ---------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `toIndex({ row, col })`      | `RowCol`                          | `number`: the index of the square at that row and column                                        |
 | `toRowCol(index)`            | `number`                          | `RowCol`: `{ row, col }` of that square                                                         |
-| `getCell(index)`             | `number`                          | [`Cell`](#cell)                                                                        |
-| `getCells()`                 |                                   | `Cell[]`: every square, in index order                                                          |
+| `getSquare(index)`           | `number`                          | [`Square`](#square)                                                                             |
+| `getSquares()`               |                                   | `Square[]`: every square, in index order                                                        |
 | `isBlock(index)`             | `number`                          | `boolean`                                                                                       |
 | `clues`                      |                                   | `{ across: Clue[]; down: Clue[] }`, each in number order                                        |
 | `allClues`                   |                                   | `Clue[]`: by number, across before down at the same number                                      |
@@ -167,7 +172,7 @@ puzzle.checksums;
 All of these throw `RangeError` for a square outside the grid.
 
 ```ts
-puzzle.getCell(13); // row 2, column 3
+puzzle.getSquare(13); // row 2, column 3
 // {
 //   index: 13, row: 2, col: 3, isBlock: false,
 //   number: 8,           // printed clue number, or undefined
@@ -178,7 +183,7 @@ puzzle.getCell(13); // row 2, column 3
 // }
 
 puzzle.getClue("down", 10);
-// { number: 10, direction: "down", text: "Short bottom", cells: [17, 22], index: 10, listIndex: 5 }
+// { number: 10, direction: "down", text: "Short bottom", squares: [17, 22], index: 10, listIndex: 5 }
 ```
 
 ### Entries
@@ -204,16 +209,16 @@ puzzle.getClue("down", 10);
 
 Each of these throws `PuzLockedError` if the solution is unavailable, `RangeError` for a square outside the grid, and `RangeError` for a clue that doesn't exist.
 
-| Method                 | Input                    | Returns       |
-| ---------------------- | ------------------------ | ------------- |
-| `checkCell(index)`     | `number`                 | `CheckResult` |
-| `checkCells(indexes)`  | any iterable of `number` | `CheckResult` |
-| `checkClue(clue)`      | `{ direction, number }`  | `CheckResult` |
-| `checkPuzzle()`        |                          | `CheckResult` |
-| `revealCell(index)`    | `number`                 | `number[]`    |
-| `revealCells(indexes)` | any iterable of `number` | `number[]`    |
-| `revealClue(clue)`     | `{ direction, number }`  | `number[]`    |
-| `revealPuzzle()`       |                          | `number[]`    |
+| Method                   | Input                    | Returns       |
+| ------------------------ | ------------------------ | ------------- |
+| `checkSquare(index)`     | `number`                 | `CheckResult` |
+| `checkSquares(indexes)`  | any iterable of `number` | `CheckResult` |
+| `checkClue(clue)`        | `{ direction, number }`  | `CheckResult` |
+| `checkPuzzle()`          |                          | `CheckResult` |
+| `revealSquare(index)`    | `number`                 | `number[]`    |
+| `revealSquares(indexes)` | any iterable of `number` | `number[]`    |
+| `revealClue(clue)`       | `{ direction, number }`  | `number[]`    |
+| `revealPuzzle()`         |                          | `number[]`    |
 
 **Checking** looks only at squares that have a value (blocks and empty squares are skipped). It updates each square's flags:
 
@@ -232,16 +237,16 @@ puzzle.revealClue({ direction: "down", number: 4 }); // [3, 8, 13, 18, 23]
 
 ### Square flags
 
-Each square has a bitmask of flags (stored in the file's `GEXT` section). The flags are listed under [`CellFlag`](#constants).
+Each square has a bitmask of flags (stored in the file's `GEXT` section). The flags are listed under [`SquareFlag`](#constants).
 
-| Method                       | Input                           | Returns   | Meaning                                                   |
-| ---------------------------- | ------------------------------- | --------- | --------------------------------------------------------- |
-| `getFlags(index)`            | `number`                        | `number`  | The raw bitmask.                                          |
-| `hasFlag(index, flag)`       | `number`, `CellFlag`            | `boolean` |                                                           |
-| `setFlag(index, flag, on)`   | `number`, `CellFlag`, `boolean` | `void`    | Turns one flag on (`true`) or off (`false`).              |
-| `isCircled(index)`           | `number`                        | `boolean` | Shortcut for `hasFlag(index, CellFlag.CIRCLED)`.          |
-| `setCircled(index, circled)` | `number`, `boolean`             | `void`    | Shortcut for `setFlag(index, CellFlag.CIRCLED, circled)`. |
-| `isRevealed(index)`          | `number`                        | `boolean` | Shortcut for `hasFlag(index, CellFlag.REVEALED)`.         |
+| Method                       | Input                             | Returns   | Meaning                                                     |
+| ---------------------------- | --------------------------------- | --------- | ----------------------------------------------------------- |
+| `getFlags(index)`            | `number`                          | `number`  | The raw bitmask.                                            |
+| `hasFlag(index, flag)`       | `number`, `SquareFlag`            | `boolean` |                                                             |
+| `setFlag(index, flag, on)`   | `number`, `SquareFlag`, `boolean` | `void`    | Turns one flag on (`true`) or off (`false`).                |
+| `isCircled(index)`           | `number`                          | `boolean` | Shortcut for `hasFlag(index, SquareFlag.CIRCLED)`.          |
+| `setCircled(index, circled)` | `number`, `boolean`               | `void`    | Shortcut for `setFlag(index, SquareFlag.CIRCLED, circled)`. |
+| `isRevealed(index)`          | `number`                          | `boolean` | Shortcut for `hasFlag(index, SquareFlag.REVEALED)`.         |
 
 ### Timer
 
@@ -287,12 +292,12 @@ type RowCol = { row: number; col: number }; // returned by toRowCol, accepted by
 type Direction = "across" | "down";
 ```
 
-### Cell
+### Square
 
-Returned by `getCell` and `getCells`.
+Returned by `getSquare` and `getSquares`.
 
 ```ts
-interface Cell {
+interface Square {
   index: number; // row * width + col
   row: number;
   col: number;
@@ -302,7 +307,7 @@ interface Cell {
   down: number | undefined; // index into puzzle.clues.down of the down clue through this square
   value: string; // "" if empty; may be several letters (rebus)
   solution: string | undefined; // undefined while the solution is unavailable
-  flags: number; // CellFlag bitmask
+  flags: number; // SquareFlag bitmask
   isCircled: boolean;
   isRevealed: boolean;
   isIncorrect: boolean; // marked wrong by the last check
@@ -320,7 +325,7 @@ interface Clue {
   number: number; // printed number
   direction: Direction;
   text: string;
-  cells: readonly number[]; // square indexes of the answer, in reading order
+  squares: readonly number[]; // square indexes of the answer, in reading order
   index: number; // position in allClues (the order clues are stored in the file)
   listIndex: number; // position in clues.across or clues.down
 }
@@ -426,7 +431,7 @@ You don't need these for normal use. They give direct access to the file format.
 | `base64ToBytes(base64)`                             | `string`                                                                               | `Uint8Array`. Throws `TypeError` on invalid characters.                                                                                                                                                                                                                                   |
 | `collectBytes(source)`                              | same as `Puzzle.fromStream`'s `source`                                                 | `Promise<Uint8Array>` with all chunks joined                                                                                                                                                                                                                                              |
 
-`computeLayout` returns `squares` items with the `Cell` fields from `index` to `down`. Its `across` and `down` items are the `Clue` fields without `text`.
+`computeLayout` returns `squares` items with the `Square` fields from `index` to `down`. Its `across` and `down` items are the `Clue` fields without `text`.
 
 ---
 
@@ -434,7 +439,7 @@ You don't need these for normal use. They give direct access to the file format.
 
 ```ts
 import {
-  CellFlag,
+  SquareFlag,
   PuzzleType,
   SolutionState,
   SectionTitle,
@@ -444,24 +449,24 @@ import {
 } from "puzkit";
 ```
 
-| Constant                        | Value    | Meaning                                                  |
-| ------------------------------- | -------- | -------------------------------------------------------- |
-| `CellFlag.PREVIOUSLY_INCORRECT` | `0x10`   | Was marked wrong, then fixed.                            |
-| `CellFlag.INCORRECT`            | `0x20`   | Marked wrong by a check.                                 |
-| `CellFlag.REVEALED`             | `0x40`   | Answer was revealed.                                     |
-| `CellFlag.CIRCLED`              | `0x80`   | Square is drawn with a circle.                           |
-| `PuzzleType.NORMAL`             | `0x0001` |                                                          |
-| `PuzzleType.DIAGRAMLESS`        | `0x0401` |                                                          |
-| `SolutionState.UNSCRAMBLED`     | `0x0000` |                                                          |
-| `SolutionState.NO_SOLUTION`     | `0x0002` | File has no solution.                                    |
-| `SolutionState.SCRAMBLED`       | `0x0004` | Solution is locked.                                      |
-| `SectionTitle.GRBS` / `.RTBL`   |          | Rebus answers (which squares, and the answer text).      |
-| `SectionTitle.RUSR`             |          | Player's rebus entries.                                  |
-| `SectionTitle.GEXT`             |          | Square flags.                                            |
-| `SectionTitle.LTIM`             |          | Timer.                                                   |
-| `BLOCK`                         | `"."`    | Block character in `solution` / `state`.                 |
-| `DIAGRAMLESS_BLOCK`             | `":"`    | Alternative block character used by diagramless puzzles. |
-| `EMPTY`                         | `"-"`    | Empty square in `state`.                                 |
+| Constant                          | Value    | Meaning                                                  |
+| --------------------------------- | -------- | -------------------------------------------------------- |
+| `SquareFlag.PREVIOUSLY_INCORRECT` | `0x10`   | Was marked wrong, then fixed.                            |
+| `SquareFlag.INCORRECT`            | `0x20`   | Marked wrong by a check.                                 |
+| `SquareFlag.REVEALED`             | `0x40`   | Answer was revealed.                                     |
+| `SquareFlag.CIRCLED`              | `0x80`   | Square is drawn with a circle.                           |
+| `PuzzleType.NORMAL`               | `0x0001` |                                                          |
+| `PuzzleType.DIAGRAMLESS`          | `0x0401` |                                                          |
+| `SolutionState.UNSCRAMBLED`       | `0x0000` |                                                          |
+| `SolutionState.NO_SOLUTION`       | `0x0002` | File has no solution.                                    |
+| `SolutionState.SCRAMBLED`         | `0x0004` | Solution is locked.                                      |
+| `SectionTitle.GRBS` / `.RTBL`     |          | Rebus answers (which squares, and the answer text).      |
+| `SectionTitle.RUSR`               |          | Player's rebus entries.                                  |
+| `SectionTitle.GEXT`               |          | Square flags.                                            |
+| `SectionTitle.LTIM`               |          | Timer.                                                   |
+| `BLOCK`                           | `"."`    | Block character in `solution` / `state`.                 |
+| `DIAGRAMLESS_BLOCK`               | `":"`    | Alternative block character used by diagramless puzzles. |
+| `EMPTY`                           | `"-"`    | Empty square in `state`.                                 |
 
 ---
 

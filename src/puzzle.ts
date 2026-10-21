@@ -1,9 +1,15 @@
 import { base64ToBytes, bytesToBase64 } from "./base64.js";
 import type { ChecksumReport } from "./checksum.js";
-import { BLOCK, CellFlag, EMPTY, PuzzleType, SectionTitle, SolutionState } from "./constants.js";
+import { BLOCK, SquareFlag, EMPTY, PuzzleType, SectionTitle, SolutionState } from "./constants.js";
 import { encodingForVersion } from "./encoding.js";
 import { PuzError, PuzLockedError } from "./errors.js";
-import { type Direction, type Entry, type Layout, type SquareInfo, computeLayout } from "./grid.js";
+import {
+  type Direction,
+  type Entry,
+  type Layout,
+  type SquareLayout,
+  computeLayout,
+} from "./grid.js";
 import { type PuzSection, type RawPuz, emptyRawPuz } from "./raw.js";
 import { type ParseOptions, parsePuz } from "./reader.js";
 import { scrambleSolution, scrambledChecksum, unscrambleSolution } from "./scramble.js";
@@ -37,12 +43,12 @@ export interface Clue extends Entry {
 }
 
 /** A snapshot of one square: its position, numbering, solution, and current state. */
-export interface Cell extends SquareInfo {
+export interface Square extends SquareLayout {
   /** The player's entry, or "" if empty. Multi-letter for rebus entries. */
   readonly value: string;
   /** The correct answer, or `undefined` if the solution is locked or absent. */
   readonly solution: string | undefined;
-  /** Raw GEXT bit flags, see {@link CellFlag}. */
+  /** Raw GEXT bit flags, see {@link SquareFlag}. */
   readonly flags: number;
   readonly isCircled: boolean;
   readonly isRevealed: boolean;
@@ -146,27 +152,27 @@ export class Puzzle {
     this.#layout = computeLayout(raw.solution, raw.width, raw.height);
     this.#originalSections = new Set(raw.sections.map((s) => s.title));
 
-    const cells = raw.width * raw.height;
+    const squareCount = raw.width * raw.height;
     const section = (title: string) => raw.sections.find((s) => s.title === title)?.data;
     const encoding = encodingForVersion(raw.version);
 
     const userRebus = section(SectionTitle.RUSR);
-    const rusr = userRebus ? parseRusr(userRebus, cells, encoding) : [];
-    this.#values = Array.from({ length: cells }, (_, i) => {
+    const rusr = userRebus ? parseRusr(userRebus, squareCount, encoding) : [];
+    this.#values = Array.from({ length: squareCount }, (_, i) => {
       if (this.#layout.squares[i]!.isBlock) return "";
       if (rusr[i]) return rusr[i]!;
       const ch = raw.state[i] ?? EMPTY;
       return ch === EMPTY ? "" : ch;
     });
 
-    this.#flags = new Uint8Array(cells);
+    this.#flags = new Uint8Array(squareCount);
     const gext = section(SectionTitle.GEXT);
-    if (gext) this.#flags.set(gext.subarray(0, cells));
+    if (gext) this.#flags.set(gext.subarray(0, squareCount));
 
     const rtbl = section(SectionTitle.RTBL);
     this.#rebusTable = rtbl ? parseRtbl(rtbl) : new Map();
     const grbs = section(SectionTitle.GRBS);
-    this.#rebus = Array.from({ length: cells }, (_, i) => {
+    this.#rebus = Array.from({ length: squareCount }, (_, i) => {
       const key = grbs?.[i];
       return key ? this.#rebusTable.get(key - 1) : undefined;
     });
@@ -274,7 +280,7 @@ export class Puzzle {
   /** The current puzzle as a {@link RawPuz}, with all user state folded into the grid and sections. */
   toRaw(options: WriteOptions = {}): RawPuz {
     const raw = copyRaw(this.#raw);
-    const cells = this.size;
+    const squareCount = this.size;
     const encoding = encodingForVersion(raw.version);
 
     raw.state = this.#values
@@ -308,7 +314,8 @@ export class Puzzle {
       if (data) sections.push({ title, data });
     }
     raw.sections = sections;
-    if (raw.state.length !== cells) throw new PuzError("Internal error: state length mismatch");
+    if (raw.state.length !== squareCount)
+      throw new PuzError("Internal error: state length mismatch");
     return raw;
   }
 
@@ -398,7 +405,7 @@ export class Puzzle {
   }
 
   /** A snapshot of one square. */
-  getCell(index: number): Cell {
+  getSquare(index: number): Square {
     const i = this.#check(index);
     const flags = this.#flags[i]!;
     const solution = this.hasSolution && !this.isScrambled ? this.#solutionAt(i) : undefined;
@@ -407,17 +414,17 @@ export class Puzzle {
       value: this.#values[i]!,
       solution,
       flags,
-      isCircled: (flags & CellFlag.CIRCLED) !== 0,
-      isRevealed: (flags & CellFlag.REVEALED) !== 0,
-      isIncorrect: (flags & CellFlag.INCORRECT) !== 0,
-      wasIncorrect: (flags & CellFlag.PREVIOUSLY_INCORRECT) !== 0,
+      isCircled: (flags & SquareFlag.CIRCLED) !== 0,
+      isRevealed: (flags & SquareFlag.REVEALED) !== 0,
+      isIncorrect: (flags & SquareFlag.INCORRECT) !== 0,
+      wasIncorrect: (flags & SquareFlag.PREVIOUSLY_INCORRECT) !== 0,
       isRebus: this.#rebus[i] !== undefined && this.#rebus[i]!.length > 1,
     };
   }
 
   /** Snapshots of every square, row-major. */
-  getCells(): Cell[] {
-    return Array.from({ length: this.size }, (_, i) => this.getCell(i));
+  getSquares(): Square[] {
+    return Array.from({ length: this.size }, (_, i) => this.getSquare(i));
   }
 
   isBlock(index: number): boolean {
@@ -479,7 +486,7 @@ export class Puzzle {
   setSquareValue(index: number, value: string, options: SetSquareValueOptions = {}): boolean {
     const i = this.#check(index);
     if (this.#layout.squares[i]!.isBlock) return false;
-    if (!options.force && this.#hasFlag(i, CellFlag.REVEALED)) return false;
+    if (!options.force && this.#hasFlag(i, SquareFlag.REVEALED)) return false;
     const next = options.preserveCase ? value : value.toUpperCase();
     if (next === EMPTY || next === BLOCK) throw new RangeError(`"${next}" is not a valid entry`);
     if (this.#values[i] === next) return false;
@@ -497,8 +504,8 @@ export class Puzzle {
     for (let i = 0; i < this.size; i++) {
       if (options.includeRevealed) {
         this.#values[i] = "";
-        this.#flags[i] = this.#flags[i]! & CellFlag.CIRCLED;
-      } else if (!this.#hasFlag(i, CellFlag.REVEALED)) {
+        this.#flags[i] = this.#flags[i]! & SquareFlag.CIRCLED;
+      } else if (!this.#hasFlag(i, SquareFlag.REVEALED)) {
         this.#values[i] = "";
       }
     }
@@ -532,26 +539,26 @@ export class Puzzle {
     return this.#flags[this.#check(index)]!;
   }
 
-  hasFlag(index: number, flag: CellFlag): boolean {
+  hasFlag(index: number, flag: SquareFlag): boolean {
     return this.#hasFlag(this.#check(index), flag);
   }
 
-  /** Set or clear one {@link CellFlag} on a square. */
-  setFlag(index: number, flag: CellFlag, on: boolean): void {
+  /** Set or clear one {@link SquareFlag} on a square. */
+  setFlag(index: number, flag: SquareFlag, on: boolean): void {
     const i = this.#check(index);
     this.#flags[i] = on ? this.#flags[i]! | flag : this.#flags[i]! & ~flag;
   }
 
   isCircled(index: number): boolean {
-    return this.hasFlag(index, CellFlag.CIRCLED);
+    return this.hasFlag(index, SquareFlag.CIRCLED);
   }
 
   setCircled(index: number, circled: boolean): void {
-    this.setFlag(index, CellFlag.CIRCLED, circled);
+    this.setFlag(index, SquareFlag.CIRCLED, circled);
   }
 
   isRevealed(index: number): boolean {
-    return this.hasFlag(index, CellFlag.REVEALED);
+    return this.hasFlag(index, SquareFlag.REVEALED);
   }
 
   // ---------------------------------------------------------------------------------------
@@ -563,7 +570,7 @@ export class Puzzle {
    * Wrong squares get INCORRECT; a correct square previously marked INCORRECT becomes
    * PREVIOUSLY_INCORRECT.
    */
-  checkCells(indexes: Iterable<number>): CheckResult {
+  checkSquares(indexes: Iterable<number>): CheckResult {
     this.#requireSolution();
     const checked: number[] = [];
     const incorrect: number[] = [];
@@ -573,9 +580,10 @@ export class Puzzle {
       checked.push(i);
       let f = this.#flags[i]!;
       if (this.#isCorrect(i)) {
-        if (f & CellFlag.INCORRECT) f = (f & ~CellFlag.INCORRECT) | CellFlag.PREVIOUSLY_INCORRECT;
+        if (f & SquareFlag.INCORRECT)
+          f = (f & ~SquareFlag.INCORRECT) | SquareFlag.PREVIOUSLY_INCORRECT;
       } else {
-        f |= CellFlag.INCORRECT;
+        f |= SquareFlag.INCORRECT;
         incorrect.push(i);
       }
       this.#flags[i] = f;
@@ -583,16 +591,16 @@ export class Puzzle {
     return { checked, incorrect };
   }
 
-  checkCell(index: number): CheckResult {
-    return this.checkCells([index]);
+  checkSquare(index: number): CheckResult {
+    return this.checkSquares([index]);
   }
 
   checkClue(clue: Pick<Clue, "direction" | "number">): CheckResult {
-    return this.checkCells(this.#entryCells(clue));
+    return this.checkSquares(this.#entrySquares(clue));
   }
 
   checkPuzzle(): CheckResult {
-    return this.checkCells(this.#allIndices());
+    return this.checkSquares(this.#allIndices());
   }
 
   /**
@@ -601,29 +609,29 @@ export class Puzzle {
    *
    * @returns The squares that were revealed.
    */
-  revealCells(indexes: Iterable<number>): number[] {
+  revealSquares(indexes: Iterable<number>): number[] {
     this.#requireSolution();
     const revealed: number[] = [];
     for (const index of indexes) {
       const i = this.#check(index);
       if (this.#layout.squares[i]!.isBlock) continue;
-      this.#flags[i] = this.#flags[i]! | CellFlag.REVEALED;
+      this.#flags[i] = this.#flags[i]! | SquareFlag.REVEALED;
       this.#values[i] = this.#solutionAt(i);
       revealed.push(i);
     }
     return revealed;
   }
 
-  revealCell(index: number): number[] {
-    return this.revealCells([index]);
+  revealSquare(index: number): number[] {
+    return this.revealSquares([index]);
   }
 
   revealClue(clue: Pick<Clue, "direction" | "number">): number[] {
-    return this.revealCells(this.#entryCells(clue));
+    return this.revealSquares(this.#entrySquares(clue));
   }
 
   revealPuzzle(): number[] {
-    return this.revealCells(this.#allIndices());
+    return this.revealSquares(this.#allIndices());
   }
 
   // ---------------------------------------------------------------------------------------
@@ -747,10 +755,10 @@ export class Puzzle {
       throw new PuzLockedError("The solution is scrambled; call unscramble(key) first");
   }
 
-  #entryCells(clue: Pick<Clue, "direction" | "number">): readonly number[] {
+  #entrySquares(clue: Pick<Clue, "direction" | "number">): readonly number[] {
     const found = this.getClue(clue.direction, clue.number);
     if (!found) throw new RangeError(`No ${clue.number} ${clue.direction} clue`);
-    return found.cells;
+    return found.squares;
   }
 
   *#allIndices(): Generator<number> {
