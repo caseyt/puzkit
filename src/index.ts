@@ -1,13 +1,13 @@
 export {
   Puzzle,
   type Cell,
-  type CellRef,
   type CheckResult,
   type ClearOptions,
   type Clue,
   type CreatePuzzleOptions,
   type ReadOptions,
-  type SetValueOptions,
+  type RowCol,
+  type SetSquareValueOptions,
   type Timer,
   type WriteOptions,
 } from "./puzzle.js";

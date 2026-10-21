@@ -7,6 +7,7 @@ A TypeScript library for reading, modifying and writing Across Lite **`.puz`** c
 - Checksums are verified when reading and recomputed when writing.
 
 Install
+
 ```sh
 npm install puzkit
 ```
@@ -44,8 +45,8 @@ const clue = puzzle.getClue("across", 1)!;
 console.log(clue.text); // "Prepares for a busy evening, maybe"
 console.log(clue.cells); // [0, 1, 2, 3]  (square indexes)
 
-puzzle.setValue(0, "D"); // fill square 0
-puzzle.setValue({ row: 0, col: 1 }, "E"); // fill square at row 0, column 1
+puzzle.setSquareValue(0, "D"); // fill square 0
+puzzle.setSquareValue(puzzle.toIndex({ row: 0, col: 1 }), "E"); // fill row 0, column 1
 
 const result = puzzle.checkClue({ direction: "across", number: 1 });
 console.log(result.incorrect); // indexes of wrong squares, e.g. [1]
@@ -60,15 +61,15 @@ await writePuzzleFile("monday.puz", puzzle);
 
 ## Key concepts
 
-**Squares.** The grid has `width × height` squares, numbered row by row from `0`. The square at `row`, `col` has index `row * width + col`. Wherever a method takes a square (a `CellRef`), you can pass that index **or** `{ row, col }`. A square outside the grid throws `RangeError`.
+**Squares.** The grid has `width × height` squares, numbered row by row from `0`. The square at `row`, `col` has index `row * width + col`. Every method that takes a square takes this index. Use `toIndex({ row, col })` and `toRowCol(index)` to convert. An index outside the grid throws `RangeError`.
 
-**Blocks.** Black squares are called blocks. They have no value, are skipped by check and reveal, and `setValue` on a block does nothing (it returns `false`).
+**Blocks.** Black squares are called blocks. They have no value, are skipped by check and reveal, and `setSquareValue` on a block does nothing (it returns `false`).
 
 **Clues.** A clue is identified by its `direction` (`"across"` or `"down"`) and its printed `number`. Methods that act on a clue take `{ direction, number }`. Any `Clue` object you got from the puzzle also works.
 
 **Values.** A square's value is a string. An empty square is `""`. A value longer than one letter (like `"STAR"`) is a _rebus_ entry, which is saved to the file correctly.
 
-**Mutability.** A `Puzzle` is changed in place: `setValue`, `checkPuzzle` and the other modifying methods do not return a new puzzle. Call `puzzle.clone()` when you need a separate copy, for example to put a new object into React state.
+**Mutability.** A `Puzzle` is changed in place: `setSquareValue`, `checkPuzzle` and the other modifying methods do not return a new puzzle. Call `puzzle.clone()` when you need a separate copy, for example to put a new object into React state.
 
 **Snapshots.** `getCell()`, `getCells()` and `getTimer()` return plain objects describing the puzzle at that moment. They do not update when the puzzle changes.
 
@@ -157,20 +158,21 @@ puzzle.checksums;
 
 | Method / property            | Input                             | Returns                                                                                         |
 | ---------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `indexOf(ref)`               | `CellRef`                         | `number`: the square's index                                                                    |
-| `getCell(ref)`               | `CellRef`                         | [`Cell`](#cell) snapshot                                                                        |
+| `toIndex({ row, col })`      | `RowCol`                          | `number`: the index of the square at that row and column                                        |
+| `toRowCol(index)`            | `number`                          | `RowCol`: `{ row, col }` of that square                                                         |
+| `getCell(index)`             | `number`                          | [`Cell`](#cell) snapshot                                                                        |
 | `getCells()`                 |                                   | `Cell[]`: every square, in index order                                                          |
-| `isBlock(ref)`               | `CellRef`                         | `boolean`                                                                                       |
+| `isBlock(index)`             | `number`                          | `boolean`                                                                                       |
 | `clues`                      |                                   | `{ across: Clue[]; down: Clue[] }`, each in number order                                        |
 | `allClues`                   |                                   | `Clue[]`: by number, across before down at the same number                                      |
 | `getClue(direction, number)` | `"across" \| "down"`, `number`    | `Clue \| undefined`                                                                             |
-| `cluesAt(ref)`               | `CellRef`                         | `{ across: Clue \| undefined; down: Clue \| undefined }`: the clues passing through that square |
+| `cluesAt(index)`             | `number`                          | `{ across: Clue \| undefined; down: Clue \| undefined }`: the clues passing through that square |
 | `setClueText(clue, text)`    | `{ direction, number }`, `string` | `void`. Throws `RangeError` if there is no such clue.                                           |
 
 All of these throw `RangeError` for a square outside the grid.
 
 ```ts
-puzzle.getCell({ row: 2, col: 3 });
+puzzle.getCell(13); // row 2, column 3
 // {
 //   index: 13, row: 2, col: 3, isBlock: false,
 //   number: 8,           // printed clue number, or undefined
@@ -186,17 +188,17 @@ puzzle.getClue("down", 10);
 
 ### Entries
 
-| Method                           | Input                                  | Returns   | Behaviour                                                                                                                                                                                                                                                      |
-| -------------------------------- | -------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getValue(ref)`                  | `CellRef`                              | `string`  | The square's value, or `""` if it is empty or a block.                                                                                                                                                                                                         |
-| `setValue(ref, value, options?)` | `CellRef`, `string`, `SetValueOptions` | `boolean` | Sets the value and returns `true` if it changed. `""` empties the square. Uppercased unless `preserveCase` is set. Does nothing (returns `false`) on a block, or on a revealed square unless `force` is set. Throws `RangeError` if `value` is `"-"` or `"."`. |
-| `clearValue(ref, options?)`      | `CellRef`, `{ force?: boolean }`       | `boolean` | Same as `setValue(ref, "", options)`.                                                                                                                                                                                                                          |
-| `clear(options?)`                | `{ includeRevealed?: boolean }`        | `void`    | Empties every square except revealed ones. With `includeRevealed: true`, empties every square and removes all flags except `CIRCLED`.                                                                                                                          |
-| `isFilled`                       |                                        | `boolean` | `true` if every non-block square has a value.                                                                                                                                                                                                                  |
-| `isSolved`                       |                                        | `boolean` | `true` if every non-block square is correct. Throws `PuzLockedError` if the solution is unavailable.                                                                                                                                                           |
-| `isCorrect(ref)`                 | `CellRef`                              | `boolean` | `true` if the value matches the solution (case-insensitive). Empty is never correct. For a rebus square, the full answer or its first letter both count. Throws `PuzLockedError` if the solution is unavailable.                                               |
+| Method                                   | Input                                       | Returns   | Behaviour                                                                                                                                                                                                                                                      |
+| ---------------------------------------- | ------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getSquareValue(index)`                  | `number`                                    | `string`  | The square's value, or `""` if it is empty or a block.                                                                                                                                                                                                         |
+| `setSquareValue(index, value, options?)` | `number`, `string`, `SetSquareValueOptions` | `boolean` | Sets the value and returns `true` if it changed. `""` empties the square. Uppercased unless `preserveCase` is set. Does nothing (returns `false`) on a block, or on a revealed square unless `force` is set. Throws `RangeError` if `value` is `"-"` or `"."`. |
+| `clearSquareValue(index, options?)`      | `number`, `{ force?: boolean }`             | `boolean` | Same as `setSquareValue(index, "", options)`.                                                                                                                                                                                                                  |
+| `clear(options?)`                        | `{ includeRevealed?: boolean }`             | `void`    | Empties every square except revealed ones. With `includeRevealed: true`, empties every square and removes all flags except `CIRCLED`.                                                                                                                          |
+| `isFilled`                               |                                             | `boolean` | `true` if every non-block square has a value.                                                                                                                                                                                                                  |
+| `isSolved`                               |                                             | `boolean` | `true` if every non-block square is correct. Throws `PuzLockedError` if the solution is unavailable.                                                                                                                                                           |
+| `isCorrect(index)`                       | `number`                                    | `boolean` | `true` if the value matches the solution (case-insensitive). Empty is never correct. For a rebus square, the full answer or its first letter both count. Throws `PuzLockedError` if the solution is unavailable.                                               |
 
-`SetValueOptions`:
+`SetSquareValueOptions`:
 
 | Option         | Type      | Default | Meaning                                             |
 | -------------- | --------- | ------- | --------------------------------------------------- |
@@ -207,16 +209,16 @@ puzzle.getClue("down", 10);
 
 Each of these throws `PuzLockedError` if the solution is unavailable, `RangeError` for a square outside the grid, and `RangeError` for a clue that doesn't exist.
 
-| Method              | Input                     | Returns       |
-| ------------------- | ------------------------- | ------------- |
-| `checkCell(ref)`    | `CellRef`                 | `CheckResult` |
-| `checkCells(refs)`  | any iterable of `CellRef` | `CheckResult` |
-| `checkClue(clue)`   | `{ direction, number }`   | `CheckResult` |
-| `checkPuzzle()`     |                           | `CheckResult` |
-| `revealCell(ref)`   | `CellRef`                 | `number[]`    |
-| `revealCells(refs)` | any iterable of `CellRef` | `number[]`    |
-| `revealClue(clue)`  | `{ direction, number }`   | `number[]`    |
-| `revealPuzzle()`    |                           | `number[]`    |
+| Method                 | Input                    | Returns       |
+| ---------------------- | ------------------------ | ------------- |
+| `checkCell(index)`     | `number`                 | `CheckResult` |
+| `checkCells(indexes)`  | any iterable of `number` | `CheckResult` |
+| `checkClue(clue)`      | `{ direction, number }`  | `CheckResult` |
+| `checkPuzzle()`        |                          | `CheckResult` |
+| `revealCell(index)`    | `number`                 | `number[]`    |
+| `revealCells(indexes)` | any iterable of `number` | `number[]`    |
+| `revealClue(clue)`     | `{ direction, number }`  | `number[]`    |
+| `revealPuzzle()`       |                          | `number[]`    |
 
 **Checking** looks only at squares that have a value (blocks and empty squares are skipped). It updates each square's flags:
 
@@ -226,7 +228,7 @@ Each of these throws `PuzLockedError` if the solution is unavailable, `RangeErro
 
 It returns `{ checked, incorrect }`. `checked` lists the indexes of the squares that were checked, and `incorrect` lists the ones that were wrong.
 
-**Revealing** sets each non-block square's value to the answer and sets its `REVEALED` flag. A revealed square can't be changed by `setValue` or `clearValue` unless you pass `force: true`. It returns the indexes of the squares revealed.
+**Revealing** sets each non-block square's value to the answer and sets its `REVEALED` flag. A revealed square can't be changed by `setSquareValue` or `clearSquareValue` unless you pass `force: true`. It returns the indexes of the squares revealed.
 
 ```ts
 puzzle.checkPuzzle(); // { checked: [0, 1, 5], incorrect: [1] }
@@ -237,14 +239,14 @@ puzzle.revealClue({ direction: "down", number: 4 }); // [3, 8, 13, 18, 23]
 
 Each square has a bitmask of flags (stored in the file's `GEXT` section). The flags are listed under [`CellFlag`](#constants).
 
-| Method                     | Input                            | Returns   | Meaning                                                 |
-| -------------------------- | -------------------------------- | --------- | ------------------------------------------------------- |
-| `getFlags(ref)`            | `CellRef`                        | `number`  | The raw bitmask.                                        |
-| `hasFlag(ref, flag)`       | `CellRef`, `CellFlag`            | `boolean` |                                                         |
-| `setFlag(ref, flag, on)`   | `CellRef`, `CellFlag`, `boolean` | `void`    | Turns one flag on (`true`) or off (`false`).            |
-| `isCircled(ref)`           | `CellRef`                        | `boolean` | Shortcut for `hasFlag(ref, CellFlag.CIRCLED)`.          |
-| `setCircled(ref, circled)` | `CellRef`, `boolean`             | `void`    | Shortcut for `setFlag(ref, CellFlag.CIRCLED, circled)`. |
-| `isRevealed(ref)`          | `CellRef`                        | `boolean` | Shortcut for `hasFlag(ref, CellFlag.REVEALED)`.         |
+| Method                       | Input                           | Returns   | Meaning                                                   |
+| ---------------------------- | ------------------------------- | --------- | --------------------------------------------------------- |
+| `getFlags(index)`            | `number`                        | `number`  | The raw bitmask.                                          |
+| `hasFlag(index, flag)`       | `number`, `CellFlag`            | `boolean` |                                                           |
+| `setFlag(index, flag, on)`   | `number`, `CellFlag`, `boolean` | `void`    | Turns one flag on (`true`) or off (`false`).              |
+| `isCircled(index)`           | `number`                        | `boolean` | Shortcut for `hasFlag(index, CellFlag.CIRCLED)`.          |
+| `setCircled(index, circled)` | `number`, `boolean`             | `void`    | Shortcut for `setFlag(index, CellFlag.CIRCLED, circled)`. |
+| `isRevealed(index)`          | `number`                        | `boolean` | Shortcut for `hasFlag(index, CellFlag.REVEALED)`.         |
 
 ### Timer
 
@@ -286,7 +288,7 @@ Some files ship with the solution scrambled under a 4-digit key. A key is a numb
 All types are exported from `"puzkit"`.
 
 ```ts
-type CellRef = number | { row: number; col: number };
+type RowCol = { row: number; col: number }; // returned by toRowCol, accepted by toIndex
 type Direction = "across" | "down";
 ```
 
@@ -512,7 +514,7 @@ const [puzzle, setPuzzle] = useState(() => Puzzle.fromBase64(data));
 
 function enter(index: number, letter: string) {
   const next = puzzle.clone();
-  next.setValue(index, letter);
+  next.setSquareValue(index, letter);
   setPuzzle(next);
 }
 ```

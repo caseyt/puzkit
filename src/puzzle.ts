@@ -25,8 +25,11 @@ import {
 } from "./stream.js";
 import { serializePuz } from "./writer.js";
 
-/** A square, by index or by row/column. */
-export type CellRef = number | { readonly row: number; readonly col: number };
+/** A square's row and column, both counted from 0. */
+export interface RowCol {
+  readonly row: number;
+  readonly col: number;
+}
 
 /** A clue: an {@link Entry} plus its text. */
 export interface Clue extends Entry {
@@ -68,7 +71,7 @@ export interface WriteOptions {
   now?: number;
 }
 
-export interface SetValueOptions {
+export interface SetSquareValueOptions {
   /** Overwrite squares that were revealed. Default `false`. */
   force?: boolean;
   /** Keep the case of the entry instead of uppercasing it. Default `false`. */
@@ -115,7 +118,7 @@ const KNOWN_SECTIONS: readonly string[] = [
 /**
  * A crossword puzzle loaded from (or destined for) an Across Lite .puz file.
  *
- * Puzzle objects are mutable: methods like {@link setValue} and {@link checkPuzzle} change
+ * Puzzle objects are mutable: methods like {@link setSquareValue} and {@link checkPuzzle} change
  * the puzzle in place. Use {@link clone} to take a copy, e.g. before handing a new value to
  * React state.
  */
@@ -375,25 +378,28 @@ export class Puzzle {
   // Grid & clues
   // ---------------------------------------------------------------------------------------
 
-  /** Resolve a {@link CellRef} to a square index. Throws `RangeError` if out of bounds. */
-  indexOf(ref: CellRef): number {
-    const index = typeof ref === "number" ? ref : ref.row * this.width + ref.col;
-    const outOfBounds =
-      typeof ref === "number"
-        ? !Number.isInteger(ref) || ref < 0 || ref >= this.size
-        : !Number.isInteger(ref.row) ||
-          !Number.isInteger(ref.col) ||
-          ref.row < 0 ||
-          ref.row >= this.height ||
-          ref.col < 0 ||
-          ref.col >= this.width;
-    if (outOfBounds) throw new RangeError(`Square ${JSON.stringify(ref)} is outside the grid`);
-    return index;
+  /** The index of the square at `row`, `col`. Throws `RangeError` if out of bounds. */
+  toIndex({ row, col }: RowCol): number {
+    const inBounds =
+      Number.isInteger(row) &&
+      Number.isInteger(col) &&
+      row >= 0 &&
+      row < this.height &&
+      col >= 0 &&
+      col < this.width;
+    if (!inBounds) throw new RangeError(`Square (row ${row}, col ${col}) is outside the grid`);
+    return row * this.width + col;
+  }
+
+  /** The row and column of a square. Throws `RangeError` if out of bounds. */
+  toRowCol(index: number): RowCol {
+    this.#check(index);
+    return { row: Math.floor(index / this.width), col: index % this.width };
   }
 
   /** A snapshot of one square. */
-  getCell(ref: CellRef): Cell {
-    const i = this.indexOf(ref);
+  getCell(index: number): Cell {
+    const i = this.#check(index);
     const flags = this.#flags[i]!;
     const solution = this.hasSolution && !this.isScrambled ? this.#solutionAt(i) : undefined;
     return {
@@ -414,8 +420,8 @@ export class Puzzle {
     return Array.from({ length: this.size }, (_, i) => this.getCell(i));
   }
 
-  isBlock(ref: CellRef): boolean {
-    return this.#layout.squares[this.indexOf(ref)]!.isBlock;
+  isBlock(index: number): boolean {
+    return this.#layout.squares[this.#check(index)]!.isBlock;
   }
 
   get clues(): { readonly across: readonly Clue[]; readonly down: readonly Clue[] } {
@@ -440,8 +446,8 @@ export class Puzzle {
   }
 
   /** The across and down clues that pass through a square. */
-  cluesAt(ref: CellRef): { across: Clue | undefined; down: Clue | undefined } {
-    const square = this.#layout.squares[this.indexOf(ref)]!;
+  cluesAt(index: number): { across: Clue | undefined; down: Clue | undefined } {
+    const square = this.#layout.squares[this.#check(index)]!;
     return {
       across: square.across === undefined ? undefined : this.clues.across[square.across],
       down: square.down === undefined ? undefined : this.clues.down[square.down],
@@ -460,8 +466,8 @@ export class Puzzle {
   // ---------------------------------------------------------------------------------------
 
   /** The player's entry in a square, or "" if empty. */
-  getValue(ref: CellRef): string {
-    return this.#values[this.indexOf(ref)]!;
+  getSquareValue(index: number): string {
+    return this.#values[this.#check(index)]!;
   }
 
   /**
@@ -470,8 +476,8 @@ export class Puzzle {
    *
    * @returns `true` if the square changed.
    */
-  setValue(ref: CellRef, value: string, options: SetValueOptions = {}): boolean {
-    const i = this.indexOf(ref);
+  setSquareValue(index: number, value: string, options: SetSquareValueOptions = {}): boolean {
+    const i = this.#check(index);
     if (this.#layout.squares[i]!.isBlock) return false;
     if (!options.force && this.#hasFlag(i, CellFlag.REVEALED)) return false;
     const next = options.preserveCase ? value : value.toUpperCase();
@@ -482,8 +488,8 @@ export class Puzzle {
   }
 
   /** Empty a square. Revealed squares are left alone unless `force` is set. */
-  clearValue(ref: CellRef, options: Pick<SetValueOptions, "force"> = {}): boolean {
-    return this.setValue(ref, "", options);
+  clearSquareValue(index: number, options: Pick<SetSquareValueOptions, "force"> = {}): boolean {
+    return this.setSquareValue(index, "", options);
   }
 
   /** Empty every square. */
@@ -513,39 +519,39 @@ export class Puzzle {
    * Whether a square's entry is correct. Rebus squares accept either the full answer or
    * its first letter, as Across Lite does. Empty squares are not correct.
    */
-  isCorrect(ref: CellRef): boolean {
+  isCorrect(index: number): boolean {
     this.#requireSolution();
-    return this.#isCorrect(this.indexOf(ref));
+    return this.#isCorrect(this.#check(index));
   }
 
   // ---------------------------------------------------------------------------------------
   // Markup flags
   // ---------------------------------------------------------------------------------------
 
-  getFlags(ref: CellRef): number {
-    return this.#flags[this.indexOf(ref)]!;
+  getFlags(index: number): number {
+    return this.#flags[this.#check(index)]!;
   }
 
-  hasFlag(ref: CellRef, flag: CellFlag): boolean {
-    return this.#hasFlag(this.indexOf(ref), flag);
+  hasFlag(index: number, flag: CellFlag): boolean {
+    return this.#hasFlag(this.#check(index), flag);
   }
 
   /** Set or clear one {@link CellFlag} on a square. */
-  setFlag(ref: CellRef, flag: CellFlag, on: boolean): void {
-    const i = this.indexOf(ref);
+  setFlag(index: number, flag: CellFlag, on: boolean): void {
+    const i = this.#check(index);
     this.#flags[i] = on ? this.#flags[i]! | flag : this.#flags[i]! & ~flag;
   }
 
-  isCircled(ref: CellRef): boolean {
-    return this.hasFlag(ref, CellFlag.CIRCLED);
+  isCircled(index: number): boolean {
+    return this.hasFlag(index, CellFlag.CIRCLED);
   }
 
-  setCircled(ref: CellRef, circled: boolean): void {
-    this.setFlag(ref, CellFlag.CIRCLED, circled);
+  setCircled(index: number, circled: boolean): void {
+    this.setFlag(index, CellFlag.CIRCLED, circled);
   }
 
-  isRevealed(ref: CellRef): boolean {
-    return this.hasFlag(ref, CellFlag.REVEALED);
+  isRevealed(index: number): boolean {
+    return this.hasFlag(index, CellFlag.REVEALED);
   }
 
   // ---------------------------------------------------------------------------------------
@@ -557,12 +563,12 @@ export class Puzzle {
    * Wrong squares get INCORRECT; a correct square previously marked INCORRECT becomes
    * PREVIOUSLY_INCORRECT.
    */
-  checkCells(refs: Iterable<CellRef>): CheckResult {
+  checkCells(indexes: Iterable<number>): CheckResult {
     this.#requireSolution();
     const checked: number[] = [];
     const incorrect: number[] = [];
-    for (const ref of refs) {
-      const i = this.indexOf(ref);
+    for (const index of indexes) {
+      const i = this.#check(index);
       if (this.#layout.squares[i]!.isBlock || this.#values[i] === "") continue;
       checked.push(i);
       let f = this.#flags[i]!;
@@ -577,8 +583,8 @@ export class Puzzle {
     return { checked, incorrect };
   }
 
-  checkCell(ref: CellRef): CheckResult {
-    return this.checkCells([ref]);
+  checkCell(index: number): CheckResult {
+    return this.checkCells([index]);
   }
 
   checkClue(clue: Pick<Clue, "direction" | "number">): CheckResult {
@@ -591,15 +597,15 @@ export class Puzzle {
 
   /**
    * Fill squares with their answers and mark them REVEALED. Revealed squares can't be
-   * changed by {@link setValue} unless `force` is passed.
+   * changed by {@link setSquareValue} unless `force` is passed.
    *
    * @returns The squares that were revealed.
    */
-  revealCells(refs: Iterable<CellRef>): number[] {
+  revealCells(indexes: Iterable<number>): number[] {
     this.#requireSolution();
     const revealed: number[] = [];
-    for (const ref of refs) {
-      const i = this.indexOf(ref);
+    for (const index of indexes) {
+      const i = this.#check(index);
       if (this.#layout.squares[i]!.isBlock) continue;
       this.#flags[i] = this.#flags[i]! | CellFlag.REVEALED;
       this.#values[i] = this.#solutionAt(i);
@@ -608,8 +614,8 @@ export class Puzzle {
     return revealed;
   }
 
-  revealCell(ref: CellRef): number[] {
-    return this.revealCells([ref]);
+  revealCell(index: number): number[] {
+    return this.revealCells([index]);
   }
 
   revealClue(clue: Pick<Clue, "direction" | "number">): number[] {
@@ -710,6 +716,14 @@ export class Puzzle {
   // ---------------------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------------------
+
+  /** Validate a square index and return it. Throws `RangeError` if out of bounds. */
+  #check(index: number): number {
+    if (!Number.isInteger(index) || index < 0 || index >= this.size) {
+      throw new RangeError(`Square ${index} is outside the grid`);
+    }
+    return index;
+  }
 
   #hasFlag(i: number, flag: number): boolean {
     return (this.#flags[i]! & flag) !== 0;

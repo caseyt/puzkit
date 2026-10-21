@@ -74,23 +74,33 @@ describe("metadata", () => {
 describe("cells and clues", () => {
   const p = samplePuzzle();
 
-  it("resolves cell references", () => {
-    expect(p.indexOf(7)).toBe(7);
-    expect(p.indexOf({ row: 2, col: 3 })).toBe(13);
+  it("converts between index and row/column", () => {
+    expect(p.toIndex({ row: 2, col: 3 })).toBe(13);
+    expect(p.toRowCol(13)).toEqual({ row: 2, col: 3 });
+    expect(p.toRowCol(24)).toEqual({ row: 4, col: 4 });
+    for (let i = 0; i < p.size; i++) expect(p.toIndex(p.toRowCol(i))).toBe(i);
     for (const bad of [
-      -1,
-      25,
-      1.5,
       { row: 5, col: 0 },
+      { row: -1, col: 0 },
+      { row: 0, col: 5 },
       { row: 0, col: -1 },
       { row: 0.5, col: 0 },
+      { row: 0, col: 0.5 },
     ]) {
-      expect(() => p.indexOf(bad), JSON.stringify(bad)).toThrow(RangeError);
+      expect(() => p.toIndex(bad), JSON.stringify(bad)).toThrow(RangeError);
+    }
+  });
+
+  it("rejects indexes outside the grid", () => {
+    for (const bad of [-1, 25, 1.5, NaN]) {
+      expect(() => p.toRowCol(bad), String(bad)).toThrow(RangeError);
+      expect(() => p.getCell(bad), String(bad)).toThrow(RangeError);
+      expect(() => p.setSquareValue(bad, "A"), String(bad)).toThrow(RangeError);
     }
   });
 
   it("returns a full cell snapshot", () => {
-    expect(p.getCell({ row: 2, col: 3 })).toEqual({
+    expect(p.getCell(13)).toEqual({
       index: 13,
       row: 2,
       col: 3,
@@ -134,57 +144,57 @@ describe("cells and clues", () => {
 describe("entries", () => {
   it("sets, uppercases, and clears values", () => {
     const p = samplePuzzle();
-    expect(p.setValue(0, "a")).toBe(true);
-    expect(p.setValue(0, "A")).toBe(false);
-    expect(p.setValue({ row: 0, col: 1 }, "b", { preserveCase: true })).toBe(true);
-    expect([p.getValue(0), p.getValue(1)]).toEqual(["A", "b"]);
-    expect(p.clearValue(0)).toBe(true);
-    expect(p.clearValue(0)).toBe(false);
-    expect(roundTrip(p).getValue(1)).toBe("b");
+    expect(p.setSquareValue(0, "a")).toBe(true);
+    expect(p.setSquareValue(0, "A")).toBe(false);
+    expect(p.setSquareValue(1, "b", { preserveCase: true })).toBe(true);
+    expect([p.getSquareValue(0), p.getSquareValue(1)]).toEqual(["A", "b"]);
+    expect(p.clearSquareValue(0)).toBe(true);
+    expect(p.clearSquareValue(0)).toBe(false);
+    expect(roundTrip(p).getSquareValue(1)).toBe("b");
   });
 
   it("ignores blocks and rejects grid placeholder characters", () => {
     const p = samplePuzzle();
-    expect(p.setValue(12, "A")).toBe(false);
-    expect(() => p.setValue(0, "-")).toThrow(RangeError);
-    expect(() => p.setValue(0, ".")).toThrow(RangeError);
+    expect(p.setSquareValue(12, "A")).toBe(false);
+    expect(() => p.setSquareValue(0, "-")).toThrow(RangeError);
+    expect(() => p.setSquareValue(0, ".")).toThrow(RangeError);
   });
 
   it("stores multi-letter entries as rebus (RUSR)", () => {
     const p = samplePuzzle();
-    p.setValue(13, "mno");
+    p.setSquareValue(13, "mno");
     const raw = p.toRaw();
     expect(raw.state[13]).toBe("M");
     expect(raw.sections.map((s) => s.title)).toEqual(["RUSR"]);
-    expect(roundTrip(p).getValue(13)).toBe("MNO");
+    expect(roundTrip(p).getSquareValue(13)).toBe("MNO");
   });
 
   it("does not add sections a fresh puzzle doesn't need", () => {
     const p = samplePuzzle();
-    p.setValue(0, "A");
+    p.setSquareValue(0, "A");
     expect(p.toRaw().sections).toEqual([]);
   });
 
   it("protects revealed squares unless forced", () => {
     const p = samplePuzzle();
     p.revealCell(0);
-    expect(p.setValue(0, "Z")).toBe(false);
-    expect(p.clearValue(0)).toBe(false);
-    expect(p.getValue(0)).toBe("A");
-    expect(p.setValue(0, "Z", { force: true })).toBe(true);
-    expect(p.getValue(0)).toBe("Z");
+    expect(p.setSquareValue(0, "Z")).toBe(false);
+    expect(p.clearSquareValue(0)).toBe(false);
+    expect(p.getSquareValue(0)).toBe("A");
+    expect(p.setSquareValue(0, "Z", { force: true })).toBe(true);
+    expect(p.getSquareValue(0)).toBe("Z");
   });
 
   it("clears the grid, optionally including revealed squares and markup", () => {
     const p = samplePuzzle({ circled: [1] });
-    p.setValue(1, "X");
+    p.setSquareValue(1, "X");
     p.checkCell(1);
     p.revealCell(0);
     p.clear();
-    expect([p.getValue(0), p.getValue(1)]).toEqual(["A", ""]);
+    expect([p.getSquareValue(0), p.getSquareValue(1)]).toEqual(["A", ""]);
     expect(p.getFlags(1)).toBe(CellFlag.CIRCLED | CellFlag.INCORRECT);
     p.clear({ includeRevealed: true });
-    expect([p.getValue(0), p.getFlags(0), p.getFlags(1)]).toEqual(["", 0, CellFlag.CIRCLED]);
+    expect([p.getSquareValue(0), p.getFlags(0), p.getFlags(1)]).toEqual(["", 0, CellFlag.CIRCLED]);
   });
 
   it("tracks filled and solved state", () => {
@@ -193,9 +203,9 @@ describe("entries", () => {
     SAMPLE.grid
       .join("")
       .split("")
-      .forEach((ch, i) => ch !== "." && p.setValue(i, ch));
+      .forEach((ch, i) => ch !== "." && p.setSquareValue(i, ch));
     expect([p.isFilled, p.isSolved]).toEqual([true, true]);
-    p.setValue(0, "Z");
+    p.setSquareValue(0, "Z");
     expect([p.isFilled, p.isSolved, p.isCorrect(0), p.isCorrect(1)]).toEqual([
       true,
       false,
@@ -212,18 +222,18 @@ describe("rebus solutions", () => {
     const q = p();
     expect(q.getCell(13)).toMatchObject({ solution: "MNO", isRebus: true });
     expect(q.isCorrect(13)).toBe(false);
-    q.setValue(13, "MNO");
+    q.setSquareValue(13, "MNO");
     expect(q.isCorrect(13)).toBe(true);
-    q.setValue(13, "M");
+    q.setSquareValue(13, "M");
     expect(q.isCorrect(13)).toBe(true);
-    q.setValue(13, "MN");
+    q.setSquareValue(13, "MN");
     expect(q.isCorrect(13)).toBe(false);
   });
 
   it("reveals the full rebus answer", () => {
     const q = p();
     q.revealCell(13);
-    expect(roundTrip(q).getValue(13)).toBe("MNO");
+    expect(roundTrip(q).getSquareValue(13)).toBe("MNO");
   });
 
   it("round-trips GRBS and RTBL", () => {
@@ -245,8 +255,8 @@ describe("rebus solutions", () => {
 describe("check", () => {
   it("marks incorrect and previously incorrect squares", () => {
     const p = samplePuzzle();
-    p.setValue(0, "A");
-    p.setValue(1, "X");
+    p.setSquareValue(0, "A");
+    p.setSquareValue(1, "X");
     expect(p.checkCells([0, 1, 2, 12])).toEqual({ checked: [0, 1], incorrect: [1] });
     expect(p.getFlags(0)).toBe(0);
     expect(p.getFlags(1)).toBe(CellFlag.INCORRECT);
@@ -257,7 +267,7 @@ describe("check", () => {
     expect(p.getFlags(1)).toBe(CellFlag.INCORRECT);
 
     // Fixing it and checking again turns it into "previously incorrect".
-    p.setValue(1, "B");
+    p.setSquareValue(1, "B");
     p.checkCell(1);
     expect(p.getCell(1)).toMatchObject({
       isIncorrect: false,
@@ -266,7 +276,7 @@ describe("check", () => {
     expect(p.getFlags(1)).toBe(CellFlag.PREVIOUSLY_INCORRECT);
 
     // Getting it wrong again marks it incorrect on top of previously incorrect.
-    p.setValue(1, "Q");
+    p.setSquareValue(1, "Q");
     p.checkCell(1);
     expect(p.getFlags(1)).toBe(CellFlag.PREVIOUSLY_INCORRECT | CellFlag.INCORRECT);
   });
@@ -278,7 +288,7 @@ describe("check", () => {
       [22, "X"],
       [16, "X"],
     ] as const)
-      p.setValue(i, v);
+      p.setSquareValue(i, v);
     expect(p.checkClue({ direction: "down", number: 10 })).toEqual({
       checked: [17, 22],
       incorrect: [22],
@@ -289,8 +299,8 @@ describe("check", () => {
 
   it("checks the whole puzzle and persists flags in GEXT", () => {
     const p = samplePuzzle({ circled: [24] });
-    p.setValue(0, "A");
-    p.setValue(24, "Y");
+    p.setSquareValue(0, "A");
+    p.setSquareValue(24, "Y");
     expect(p.checkPuzzle()).toEqual({ checked: [0, 24], incorrect: [24] });
     const q = roundTrip(p);
     expect(q.sectionTitles).toEqual(["GEXT"]);
@@ -302,7 +312,7 @@ describe("check", () => {
 describe("reveal", () => {
   it("reveals a square, a clue, and the puzzle", () => {
     const p = samplePuzzle();
-    expect(p.revealCell({ row: 0, col: 2 })).toEqual([2]);
+    expect(p.revealCell(2)).toEqual([2]);
     expect(p.getCell(2)).toMatchObject({ value: "C", isRevealed: true });
     expect(p.revealClue({ direction: "across", number: 7 })).toEqual([10, 11]);
     expect(p.revealCells([12])).toEqual([]);
@@ -393,13 +403,13 @@ describe("reading played files", () => {
   it("reads entries, rebus, markup, and timer written by this library", () => {
     const p = Puzzle.fromBytes(fixture("played.puz"));
     expect(p.checksums.valid).toBe(true);
-    expect([p.getValue(0), p.getValue(1), p.getValue(5), p.getValue(13), p.getValue(24)]).toEqual([
-      "A",
-      "Z",
-      "F",
-      "MNO",
-      "X",
-    ]);
+    expect([
+      p.getSquareValue(0),
+      p.getSquareValue(1),
+      p.getSquareValue(5),
+      p.getSquareValue(13),
+      p.getSquareValue(24),
+    ]).toEqual(["A", "Z", "F", "MNO", "X"]);
     expect(p.getFlags(0)).toBe(CellFlag.CIRCLED);
     expect(p.getCell(1)).toMatchObject({ isIncorrect: true });
     expect(p.getCell(24)).toMatchObject({ isCircled: true, isRevealed: true });
@@ -429,14 +439,14 @@ describe("reading played files", () => {
 describe("clone", () => {
   it("is fully independent", () => {
     const p = samplePuzzle();
-    p.setValue(0, "A");
+    p.setSquareValue(0, "A");
     p.startTimer(NOW);
     const q = p.clone();
-    q.setValue(0, "B");
+    q.setSquareValue(0, "B");
     q.setCircled(1, true);
     q.title = "Changed";
     q.setClueText({ direction: "across", number: 1 }, "Changed");
-    expect([p.getValue(0), p.isCircled(1), p.title, p.getClue("across", 1)?.text]).toEqual([
+    expect([p.getSquareValue(0), p.isCircled(1), p.title, p.getClue("across", 1)?.text]).toEqual([
       "A",
       false,
       "Sample Puzzle",

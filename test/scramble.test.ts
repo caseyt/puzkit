@@ -50,7 +50,7 @@ describe("Puzzle locking", () => {
     expect(() => p.isSolved).toThrow(PuzLockedError);
 
     // Entries can still be made while locked.
-    expect(p.setValue(0, "A")).toBe(true);
+    expect(p.setSquareValue(0, "A")).toBe(true);
 
     expect(p.unscramble(4321)).toBe(false);
     expect(p.isScrambled).toBe(true);

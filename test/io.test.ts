@@ -57,7 +57,7 @@ describe("streams", () => {
         controller.close();
       },
     });
-    expect((await Puzzle.fromStream(stream)).getValue(13)).toBe("MNO");
+    expect((await Puzzle.fromStream(stream)).getSquareValue(13)).toBe("MNO");
   });
 
   it("reads a Node.js Readable", async () => {
@@ -98,10 +98,10 @@ describe("node helpers", () => {
   it("writes and reads files", async () => {
     const path = join(dir, "a.puz");
     const p = samplePuzzle();
-    p.setValue(0, "A");
+    p.setSquareValue(0, "A");
     await writePuzzleFile(path, p);
-    expect((await readPuzzleFile(path)).getValue(0)).toBe("A");
-    expect((await streamPuzzleFile(path)).getValue(0)).toBe("A");
+    expect((await readPuzzleFile(path)).getSquareValue(0)).toBe("A");
+    expect((await streamPuzzleFile(path)).getSquareValue(0)).toBe("A");
   });
 
   it("writes to a path or a Writable stream", async () => {
