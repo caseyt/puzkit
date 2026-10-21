@@ -2,8 +2,6 @@
 
 A TypeScript library for reading, modifying and writing Across Lite **`.puz`** crossword files.
 
-You load a file into a `Puzzle` object, change it (fill in squares, check answers, reveal squares, run the timer, and so on), then save it back to `.puz` bytes.
-
 - No dependencies. Works in Node.js (18+), browsers and React Native.
 - Saving a file you just loaded produces exactly the same bytes.
 - Checksums are verified when reading and recomputed when writing.
