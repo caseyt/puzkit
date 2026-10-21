@@ -15,7 +15,7 @@ export interface Entry {
 }
 
 /** Static information about a square, derived from the grid shape. */
-export interface SquareLayout {
+export interface SquareNumbering {
   readonly index: number;
   readonly row: number;
   readonly col: number;
@@ -28,8 +28,8 @@ export interface SquareLayout {
   readonly down: number | undefined;
 }
 
-export interface Layout {
-  readonly squares: readonly SquareLayout[];
+export interface GridNumbering {
+  readonly squares: readonly SquareNumbering[];
   readonly across: readonly Entry[];
   readonly down: readonly Entry[];
 }
@@ -38,7 +38,7 @@ export interface Layout {
  * Number the grid using standard crossword rules: a square gets a number if it starts an
  * across or down word of two or more letters.
  */
-export function computeLayout(solution: string, width: number, height: number): Layout {
+export function numberGrid(solution: string, width: number, height: number): GridNumbering {
   const isBlock = (i: number) => isBlockChar(solution[i]);
   const across: Entry[] = [];
   const down: Entry[] = [];
@@ -83,7 +83,7 @@ export function computeLayout(solution: string, width: number, height: number): 
     number++;
   }
 
-  const squares: SquareLayout[] = [];
+  const squares: SquareNumbering[] = [];
   for (let i = 0; i < width * height; i++) {
     squares.push({
       index: i,

@@ -11,8 +11,7 @@ export {
   type Timer,
   type WriteOptions,
 } from "./puzzle.js";
-export type { Direction, Entry, Layout, SquareLayout } from "./grid.js";
-export { computeLayout } from "./grid.js";
+export type { Direction } from "./grid.js";
 export {
   BLOCK,
   SquareFlag,

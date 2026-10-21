@@ -6,9 +6,9 @@ import { PuzError, PuzLockedError } from "./errors.js";
 import {
   type Direction,
   type Entry,
-  type Layout,
-  type SquareLayout,
-  computeLayout,
+  type GridNumbering,
+  type SquareNumbering,
+  numberGrid,
 } from "./grid.js";
 import { type PuzSection, type RawPuz, emptyRawPuz } from "./raw.js";
 import { type ParseOptions, parsePuz } from "./reader.js";
@@ -43,7 +43,7 @@ export interface Clue extends Entry {
 }
 
 /** A snapshot of one square: its position, numbering, solution, and current state. */
-export interface Square extends SquareLayout {
+export interface Square extends SquareNumbering {
   /** The player's entry, or "" if empty. Multi-letter for rebus entries. */
   readonly value: string;
   /** The correct answer, or `undefined` if the solution is locked or absent. */
@@ -133,7 +133,7 @@ export class Puzzle {
   readonly checksums: ChecksumReport;
 
   #raw: RawPuz;
-  #layout: Layout;
+  #numbering: GridNumbering;
   #clues: { across: Clue[]; down: Clue[] } | undefined;
   /** Per-square entry, "" when empty. */
   #values: string[];
@@ -149,7 +149,7 @@ export class Puzzle {
   private constructor(raw: RawPuz, checksums: ChecksumReport, now: number) {
     this.checksums = checksums;
     this.#raw = raw;
-    this.#layout = computeLayout(raw.solution, raw.width, raw.height);
+    this.#numbering = numberGrid(raw.solution, raw.width, raw.height);
     this.#originalSections = new Set(raw.sections.map((s) => s.title));
 
     const squareCount = raw.width * raw.height;
@@ -159,7 +159,7 @@ export class Puzzle {
     const userRebus = section(SectionTitle.RUSR);
     const rusr = userRebus ? parseRusr(userRebus, squareCount, encoding) : [];
     this.#values = Array.from({ length: squareCount }, (_, i) => {
-      if (this.#layout.squares[i]!.isBlock) return "";
+      if (this.#numbering.squares[i]!.isBlock) return "";
       if (rusr[i]) return rusr[i]!;
       const ch = raw.state[i] ?? EMPTY;
       return ch === EMPTY ? "" : ch;
@@ -226,15 +226,15 @@ export class Puzzle {
     raw.copyright = options.copyright ?? "";
     raw.notes = options.notes ?? "";
 
-    const layout = computeLayout(raw.solution, width, height);
+    const numbering = numberGrid(raw.solution, width, height);
     const { across, down } = options.clues;
-    if (across.length !== layout.across.length || down.length !== layout.down.length) {
+    if (across.length !== numbering.across.length || down.length !== numbering.down.length) {
       throw new PuzError(
-        `Grid has ${layout.across.length} across and ${layout.down.length} down entries, ` +
+        `Grid has ${numbering.across.length} across and ${numbering.down.length} down entries, ` +
           `but got ${across.length} across and ${down.length} down clues`,
       );
     }
-    raw.clues = [...layout.across, ...layout.down]
+    raw.clues = [...numbering.across, ...numbering.down]
       .sort((a, b) => a.index - b.index)
       .map((e) => (e.direction === "across" ? across : down)[e.listIndex]!);
 
@@ -285,7 +285,7 @@ export class Puzzle {
 
     raw.state = this.#values
       .map((v, i) =>
-        this.#layout.squares[i]!.isBlock ? (raw.state[i] ?? BLOCK) : v ? v[0]! : EMPTY,
+        this.#numbering.squares[i]!.isBlock ? (raw.state[i] ?? BLOCK) : v ? v[0]! : EMPTY,
       )
       .join("");
 
@@ -410,7 +410,7 @@ export class Puzzle {
     const flags = this.#flags[i]!;
     const solution = this.hasSolution && !this.isScrambled ? this.#solutionAt(i) : undefined;
     return {
-      ...this.#layout.squares[i]!,
+      ...this.#numbering.squares[i]!,
       value: this.#values[i]!,
       solution,
       flags,
@@ -428,15 +428,15 @@ export class Puzzle {
   }
 
   isBlock(index: number): boolean {
-    return this.#layout.squares[this.#check(index)]!.isBlock;
+    return this.#numbering.squares[this.#check(index)]!.isBlock;
   }
 
   get clues(): { readonly across: readonly Clue[]; readonly down: readonly Clue[] } {
     if (!this.#clues) {
       const withText = (e: Entry): Clue => ({ ...e, text: this.#raw.clues[e.index] ?? "" });
       this.#clues = {
-        across: this.#layout.across.map(withText),
-        down: this.#layout.down.map(withText),
+        across: this.#numbering.across.map(withText),
+        down: this.#numbering.down.map(withText),
       };
     }
     return this.#clues;
@@ -454,7 +454,7 @@ export class Puzzle {
 
   /** The across and down clues that pass through a square. */
   cluesAt(index: number): { across: Clue | undefined; down: Clue | undefined } {
-    const square = this.#layout.squares[this.#check(index)]!;
+    const square = this.#numbering.squares[this.#check(index)]!;
     return {
       across: square.across === undefined ? undefined : this.clues.across[square.across],
       down: square.down === undefined ? undefined : this.clues.down[square.down],
@@ -485,7 +485,7 @@ export class Puzzle {
    */
   setSquareValue(index: number, value: string, options: SetSquareValueOptions = {}): boolean {
     const i = this.#check(index);
-    if (this.#layout.squares[i]!.isBlock) return false;
+    if (this.#numbering.squares[i]!.isBlock) return false;
     if (!options.force && this.#hasFlag(i, SquareFlag.REVEALED)) return false;
     const next = options.preserveCase ? value : value.toUpperCase();
     if (next === EMPTY || next === BLOCK) throw new RangeError(`"${next}" is not a valid entry`);
@@ -513,13 +513,13 @@ export class Puzzle {
 
   /** `true` when every letter square has an entry. */
   get isFilled(): boolean {
-    return this.#layout.squares.every((s) => s.isBlock || this.#values[s.index] !== "");
+    return this.#numbering.squares.every((s) => s.isBlock || this.#values[s.index] !== "");
   }
 
   /** `true` when every letter square is filled in correctly. */
   get isSolved(): boolean {
     this.#requireSolution();
-    return this.#layout.squares.every((s) => s.isBlock || this.#isCorrect(s.index));
+    return this.#numbering.squares.every((s) => s.isBlock || this.#isCorrect(s.index));
   }
 
   /**
@@ -576,7 +576,7 @@ export class Puzzle {
     const incorrect: number[] = [];
     for (const index of indexes) {
       const i = this.#check(index);
-      if (this.#layout.squares[i]!.isBlock || this.#values[i] === "") continue;
+      if (this.#numbering.squares[i]!.isBlock || this.#values[i] === "") continue;
       checked.push(i);
       let f = this.#flags[i]!;
       if (this.#isCorrect(i)) {
@@ -614,7 +614,7 @@ export class Puzzle {
     const revealed: number[] = [];
     for (const index of indexes) {
       const i = this.#check(index);
-      if (this.#layout.squares[i]!.isBlock) continue;
+      if (this.#numbering.squares[i]!.isBlock) continue;
       this.#flags[i] = this.#flags[i]! | SquareFlag.REVEALED;
       this.#values[i] = this.#solutionAt(i);
       revealed.push(i);
