@@ -6,13 +6,9 @@ A TypeScript library for reading, modifying and writing Across Lite **`.puz`** c
 - Saving a file you just loaded produces exactly the same bytes.
 - Checksums are verified when reading and recomputed when writing.
 
+Install
 ```sh
 npm install puzkit
-```
-
-```ts
-import { Puzzle } from "puzkit"; // core: works everywhere
-import { readPuzzleFile, writePuzzleFile } from "puzkit/node"; // Node.js file helpers only
 ```
 
 ---
@@ -28,7 +24,7 @@ import { readPuzzleFile, writePuzzleFile } from "puzkit/node"; // Node.js file h
 6. [Low-level functions](#low-level-functions)
 7. [Constants](#constants)
 8. [Errors](#errors)
-9. [How the file is written](#how-the-file-is-written)
+9. [Notes](#notes)
 10. [Recipes](#recipes)
 11. [Development](#development)
 
@@ -495,9 +491,8 @@ try {
 
 ---
 
-## How the file is written
+## Notes
 
-- **Exact round trip:** loading a file and saving it unchanged gives back the same bytes. Unknown sections and unused header bytes are kept.
 - **Checksums** are always recomputed on save, so files with bad checksums are repaired when saved.
 - **Extra sections** are only written when needed:
   - `GEXT` (flags): if any square has a flag, or the file had this section.
@@ -561,28 +556,3 @@ npm run typecheck  # tsc
 npm run build      # build dist/ (ESM, CommonJS, and .d.ts) with tsup
 npm run format     # prettier
 ```
-
-Source layout:
-
-| File                                              | Contents                                                |
-| ------------------------------------------------- | ------------------------------------------------------- |
-| `src/index.ts`                                    | Public exports.                                         |
-| `src/puzzle.ts`                                   | The `Puzzle` class.                                     |
-| `src/node.ts`                                     | `puzkit/node` helpers.                                  |
-| `src/reader.ts`                                   | `parsePuz`: bytes → `RawPuz`, checksum verification.    |
-| `src/writer.ts`                                   | `serializePuz`: `RawPuz` → bytes.                       |
-| `src/checksum.ts`                                 | Checksum algorithms.                                    |
-| `src/grid.ts`                                     | `computeLayout`: numbering and word positions.          |
-| `src/sections.ts`                                 | Reading/writing the GRBS, RTBL, RUSR and LTIM sections. |
-| `src/scramble.ts`                                 | Solution locking.                                       |
-| `src/encoding.ts`                                 | Windows-1252 / UTF-8 text encoding.                     |
-| `src/base64.ts`, `src/stream.ts`                  | Input/output helpers.                                   |
-| `src/constants.ts`, `src/errors.ts`, `src/raw.ts` | Constants, error classes, `RawPuz`.                     |
-
-Tests are in `test/`, using small generated `.puz` files in `test/fixtures/`. `sample-locked-1234.puz` was locked by [puzpy](https://github.com/alexdej/puzpy), a Python `.puz` library, to confirm compatibility. To also test real puzzles, put `.puz` files in `test/fixtures/local/`. That folder is gitignored because published puzzles are copyrighted, and its files are tested automatically.
-
-Format reference: [PUZ file format](https://code.google.com/archive/p/puz/wikis/FileFormat.wiki).
-
-## License
-
-MIT
