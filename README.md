@@ -171,22 +171,7 @@ puzzle.checksums;
 
 All of these throw `RangeError` for a square outside the grid.
 
-```ts
-puzzle.getSquare(13); // row 2, column 3
-// {
-//   index: 13, row: 2, col: 3, isBlock: false,
-//   number: 8,           // printed clue number, or undefined
-//   across: 3, down: 3,  // positions in puzzle.clues.across / .down, or undefined
-//   value: "M", solution: "M",
-//   flags: 0, isCircled: false, isRevealed: false, isIncorrect: false, wasIncorrect: false,
-//   isRebus: false
-// }
-
-puzzle.getClue("down", 10);
-// { number: 10, direction: "down", text: "Short bottom", squares: [17, 22], index: 10, listIndex: 5 }
-```
-
-### Entries
+### Values
 
 | Method                                   | Input                                       | Returns   | Behaviour                                                                                                                                                                                                                                                      |
 | ---------------------------------------- | ------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
