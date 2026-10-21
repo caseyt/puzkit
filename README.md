@@ -1,187 +1,589 @@
 # puzkit
 
-Read, modify, and write Across Lite `.puz` crossword files.
+A TypeScript library for reading, modifying and writing Across Lite **`.puz`** crossword files.
 
-- **Zero dependencies.** Pure TypeScript with no `Buffer`, `iconv`, or `TextDecoder`, so it runs the same in Node, browsers, and React Native (Hermes).
-- **Lossless.** Reading a file and writing it straight back produces identical bytes. Unknown sections and reserved header bytes are kept.
-- **Correct checksums.** Every checksum (file, header, masked "ICHEATED", and per-section) is verified on read and recomputed on write.
-- **Covers the whole format:** player entries, check/reveal markup (GEXT), timer (LTIM), rebus squares (GRBS/RTBL/RUSR), circles, scrambled/locked solutions, diagramless puzzles, and UTF-8 (v2.0) files.
+You load a file into a `Puzzle` object, change it (fill in squares, check answers, reveal squares, run the timer, and so on), then save it back to `.puz` bytes.
+
+- No dependencies. Works in Node.js (18+), browsers and React Native.
+- Saving a file you just loaded produces exactly the same bytes.
+- Checksums are verified when reading and recomputed when writing.
 
 ```sh
 npm install puzkit
 ```
 
+```ts
+import { Puzzle } from "puzkit"; // core: works everywhere
+import { readPuzzleFile, writePuzzleFile } from "puzkit/node"; // Node.js file helpers only
+```
+
+---
+
+## Contents
+
+1. [Quick start](#quick-start)
+2. [Key concepts](#key-concepts)
+3. [Puzzle API](#puzzle-api)
+   - [Loading](#loading) · [Saving](#saving) · [Metadata](#metadata) · [Grid and clues](#grid-and-clues) · [Entries](#entries) · [Check and reveal](#check-and-reveal) · [Square flags](#square-flags) · [Timer](#timer) · [Locked solutions](#locked-solutions)
+4. [Types](#types)
+5. [Node.js helpers (`puzkit/node`)](#nodejs-helpers-puzkitnode)
+6. [Low-level functions](#low-level-functions)
+7. [Constants](#constants)
+8. [Errors](#errors)
+9. [How the file is written](#how-the-file-is-written)
+10. [Recipes](#recipes)
+11. [Development](#development)
+
+---
+
 ## Quick start
 
 ```ts
-import { Puzzle } from "puzkit";
 import { readPuzzleFile, writePuzzleFile } from "puzkit/node";
 
 const puzzle = await readPuzzleFile("monday.puz");
 
-puzzle.title; // "A Tale of Twelve Cities"
-puzzle.getClue("across", 1); // { number: 1, direction: "across", text: "...", cells: [0, 1, 2, 3], ... }
+console.log(puzzle.title); // "A Tale of Twelve Cities"
+console.log(puzzle.width, puzzle.height); // 15 15
 
-puzzle.setValue({ row: 0, col: 0 }, "C");
-puzzle.checkClue({ direction: "across", number: 1 });
-puzzle.revealCell(5);
+const clue = puzzle.getClue("across", 1)!;
+console.log(clue.text); // "Prepares for a busy evening, maybe"
+console.log(clue.cells); // [0, 1, 2, 3]  (square indexes)
+
+puzzle.setValue(0, "D"); // fill square 0
+puzzle.setValue({ row: 0, col: 1 }, "E"); // fill square at row 0, column 1
+
+const result = puzzle.checkClue({ direction: "across", number: 1 });
+console.log(result.incorrect); // indexes of wrong squares, e.g. [1]
+
+puzzle.revealCell(1);
 puzzle.startTimer();
 
 await writePuzzleFile("monday.puz", puzzle);
 ```
 
-## Loading and saving
+---
 
-| From                                                                   | To                                                                |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `Puzzle.fromBytes(uint8ArrayOrBufferOrArrayBuffer)`                    | `puzzle.toBytes()`                                                |
-| `Puzzle.fromBase64(string)`                                            | `puzzle.toBase64()`                                               |
-| `await Puzzle.fromStream(readableStreamOrNodeReadableOrAsyncIterable)` | `puzzle.toStream()` (WHATWG `ReadableStream`)                     |
-| `await readPuzzleFile(path)` _(puzkit/node)_                           | `await writePuzzleFile(path, puzzle)` _(puzkit/node)_             |
-| `await streamPuzzleFile(path)` _(puzkit/node)_                         | `await writePuzzleStream(pathOrWritable, puzzle)` _(puzkit/node)_ |
-| `Puzzle.create({ grid, clues, ... })`                                  |                                                                   |
+## Key concepts
 
-`puzkit/node` is a separate entry point, so the core never imports `node:fs`.
+**Squares.** The grid has `width × height` squares, numbered row by row from `0`. The square at `row`, `col` has index `row * width + col`. Wherever a method takes a square (a `CellRef`), you can pass that index **or** `{ row, col }`. A square outside the grid throws `RangeError`.
 
-On React Native with `expo-file-system`, base64 is the simplest route:
+**Blocks.** Black squares are called blocks. They have no value, are skipped by check and reveal, and `setValue` on a block does nothing (it returns `false`).
+
+**Clues.** A clue is identified by its `direction` (`"across"` or `"down"`) and its printed `number`. Methods that act on a clue take `{ direction, number }`. Any `Clue` object you got from the puzzle also works.
+
+**Values.** A square's value is a string. An empty square is `""`. A value longer than one letter (like `"STAR"`) is a _rebus_ entry, which is saved to the file correctly.
+
+**Mutability.** A `Puzzle` is changed in place: `setValue`, `checkPuzzle` and the other modifying methods do not return a new puzzle. Call `puzzle.clone()` when you need a separate copy, for example to put a new object into React state.
+
+**Snapshots.** `getCell()`, `getCells()` and `getTimer()` return plain objects describing the puzzle at that moment. They do not update when the puzzle changes.
+
+**The solution.** A file can contain the solution in plain form, in scrambled (locked) form, or not at all. While the solution is unavailable, anything that needs it throws `PuzLockedError`: `check*`, `reveal*`, `isCorrect`, `isSolved` and `scramble`. In that state `getCell().solution` is `undefined`. Entering values always works.
+
+**Time.** Timer methods and the load/save functions take an optional `now`: a time in milliseconds, like `Date.now()`. It defaults to `Date.now()`. Pass it explicitly when you need deterministic results, such as in tests.
+
+---
+
+## Puzzle API
+
+### Loading
+
+All loaders return a new `Puzzle`. Loading is lenient: a file with wrong checksums still loads, and the problems are listed in `puzzle.checksums`. Pass `{ strict: true }` to throw instead.
+
+| Method                                | Input                                                                                                                 | Returns           |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `Puzzle.fromBytes(input, options?)`   | `input`: the whole file as a `Uint8Array`, Node `Buffer`, `ArrayBuffer` or `DataView`                                 | `Puzzle`          |
+| `Puzzle.fromBase64(base64, options?)` | `base64`: the whole file as a base64 string (standard or URL-safe; whitespace is ignored)                             | `Puzzle`          |
+| `Puzzle.fromStream(source, options?)` | `source`: a web `ReadableStream<Uint8Array>`, a Node.js `Readable`, or any sync/async iterable of `Uint8Array` chunks | `Promise<Puzzle>` |
+| `Puzzle.fromRaw(raw, options?)`       | `raw`: a [`RawPuz`](#rawpuz) object (it is copied, not kept)                                                          | `Puzzle`          |
+| `Puzzle.create(options)`              | `options`: a [`CreatePuzzleOptions`](#createpuzzleoptions) object                                                     | `Puzzle`          |
+
+`options` for the first three is a `ReadOptions` object:
+
+| Option   | Type      | Default      | Meaning                                                                                         |
+| -------- | --------- | ------------ | ----------------------------------------------------------------------------------------------- |
+| `strict` | `boolean` | `false`      | Throw `PuzChecksumError` if any checksum is wrong, and `PuzParseError` if a section is cut off. |
+| `now`    | `number`  | `Date.now()` | If the file's timer was saved as running, it counts from this time.                             |
+
+`fromRaw` accepts only `{ now?: number }`.
+
+**Errors:** `PuzParseError` if the input is not a `.puz` file, or if the file is cut off before the end of its clues.
+
+`Puzzle.create` builds a new, empty puzzle from a solution grid and clues:
 
 ```ts
-const puzzle = Puzzle.fromBase64(await FileSystem.readAsStringAsync(uri, { encoding: "base64" }));
-await FileSystem.writeAsStringAsync(uri, puzzle.toBase64(), { encoding: "base64" });
+const puzzle = Puzzle.create({
+  grid: ["CAT", "A.O", "BOW"], // "." marks a block
+  clues: {
+    across: ["Feline", "Ribbon tie"], // in number order
+    down: ["Taxi", "Pull behind"],
+  },
+  title: "Tiny",
+});
 ```
 
-### Checksums
+**Errors:** `PuzError` if the grid is empty, if the rows have different lengths, if the number of across or down clues doesn't match the grid, or if a `rebus` index is not a letter square.
 
-Reading is lenient by default: a file with bad checksums still loads, and `puzzle.checksums` tells you what was wrong. Writing always produces correct checksums. Pass `{ strict: true }` to throw `PuzChecksumError` instead.
+### Saving
+
+Saving doesn't change the puzzle. If the timer is running, the time saved includes the run so far.
+
+| Method                      | Returns                      | Notes                                                                                    |
+| --------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `puzzle.toBytes(options?)`  | `Uint8Array`                 | The complete `.puz` file.                                                                |
+| `puzzle.toBase64(options?)` | `string`                     | The complete `.puz` file, base64 encoded.                                                |
+| `puzzle.toStream(options?)` | `ReadableStream<Uint8Array>` | Web stream. Throws `Error` if the runtime lacks `ReadableStream`; use `toBytes()` there. |
+| `puzzle.toRaw(options?)`    | [`RawPuz`](#rawpuz)          | Plain object form of the file, with no checksums.                                        |
+| `puzzle.clone()`            | `Puzzle`                     | A fully independent copy, including a running timer.                                     |
+
+`options` is `{ now?: number }`: the time used to work out a running timer's value.
+
+### Metadata
+
+| Property        | Type                | Access     | Meaning                                                                          |
+| --------------- | ------------------- | ---------- | -------------------------------------------------------------------------------- |
+| `title`         | `string`            | read/write |                                                                                  |
+| `author`        | `string`            | read/write |                                                                                  |
+| `copyright`     | `string`            | read/write |                                                                                  |
+| `notes`         | `string`            | read/write | Free-text notes shown with the puzzle.                                           |
+| `width`         | `number`            | read       | Columns.                                                                         |
+| `height`        | `number`            | read       | Rows.                                                                            |
+| `size`          | `number`            | read       | `width * height`.                                                                |
+| `version`       | `string`            | read       | File format version, e.g. `"1.3"`. `"2.0"` and above store text as UTF-8.        |
+| `isDiagramless` | `boolean`           | read       | `true` for diagramless puzzles.                                                  |
+| `sectionTitles` | `readonly string[]` | read       | Extra sections present when the file was loaded, e.g. `["GEXT", "LTIM"]`.        |
+| `checksums`     | `ChecksumReport`    | read       | Checksum results from loading. Always valid for puzzles from `create`/`fromRaw`. |
 
 ```ts
-const puzzle = Puzzle.fromBytes(bytes);
-puzzle.checksums; // { valid: false, mismatches: [{ name: "section:LTIM", stored: 84, computed: 12380 }] }
+puzzle.checksums;
+// { valid: false, mismatches: [{ name: "section:LTIM", stored: 84, computed: 12380 }] }
 ```
-
-## Working with a puzzle
-
-`Puzzle` is **mutable**. Methods change the puzzle in place. When you need a new object (for example, to hand to React state), call `puzzle.clone()`.
-
-Squares can be given as an index (row-major) or as `{ row, col }`.
 
 ### Grid and clues
 
-```ts
-puzzle.width;
-puzzle.height;
-puzzle.size;
-puzzle.getCell(13);
-// { index, row, col, isBlock, number, across, down, value, solution,
-//   flags, isCircled, isRevealed, isIncorrect, wasIncorrect, isRebus }
-puzzle.getCells();
+| Method / property            | Input                             | Returns                                                                                         |
+| ---------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `indexOf(ref)`               | `CellRef`                         | `number`: the square's index                                                                    |
+| `getCell(ref)`               | `CellRef`                         | [`Cell`](#cell) snapshot                                                                        |
+| `getCells()`                 |                                   | `Cell[]`: every square, in index order                                                          |
+| `isBlock(ref)`               | `CellRef`                         | `boolean`                                                                                       |
+| `clues`                      |                                   | `{ across: Clue[]; down: Clue[] }`, each in number order                                        |
+| `allClues`                   |                                   | `Clue[]`: by number, across before down at the same number                                      |
+| `getClue(direction, number)` | `"across" \| "down"`, `number`    | `Clue \| undefined`                                                                             |
+| `cluesAt(ref)`               | `CellRef`                         | `{ across: Clue \| undefined; down: Clue \| undefined }`: the clues passing through that square |
+| `setClueText(clue, text)`    | `{ direction, number }`, `string` | `void`. Throws `RangeError` if there is no such clue.                                           |
 
-puzzle.clues.across;
-puzzle.clues.down; // Clue[] in numbered order
-puzzle.allClues; // file order: by number, across before down
+All of these throw `RangeError` for a square outside the grid.
+
+```ts
+puzzle.getCell({ row: 2, col: 3 });
+// {
+//   index: 13, row: 2, col: 3, isBlock: false,
+//   number: 8,           // printed clue number, or undefined
+//   across: 3, down: 3,  // positions in puzzle.clues.across / .down, or undefined
+//   value: "M", solution: "M",
+//   flags: 0, isCircled: false, isRevealed: false, isIncorrect: false, wasIncorrect: false,
+//   isRebus: false
+// }
+
 puzzle.getClue("down", 10);
-puzzle.cluesAt({ row: 2, col: 3 }); // { across, down }
-puzzle.setClueText({ direction: "down", number: 10 }, "New clue");
+// { number: 10, direction: "down", text: "Short bottom", cells: [17, 22], index: 10, listIndex: 5 }
 ```
 
 ### Entries
 
-```ts
-puzzle.setValue(0, "a"); // stored as "A"; returns true if the square changed
-puzzle.setValue(13, "STAR"); // rebus entry
-puzzle.clearValue(0);
-puzzle.getValue(0); // "" when empty
-puzzle.clear(); // clear the grid, keeping revealed squares
-puzzle.clear({ includeRevealed: true }); // clear everything, including markup (circles stay)
+| Method                           | Input                                  | Returns   | Behaviour                                                                                                                                                                                                                                                      |
+| -------------------------------- | -------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getValue(ref)`                  | `CellRef`                              | `string`  | The square's value, or `""` if it is empty or a block.                                                                                                                                                                                                         |
+| `setValue(ref, value, options?)` | `CellRef`, `string`, `SetValueOptions` | `boolean` | Sets the value and returns `true` if it changed. `""` empties the square. Uppercased unless `preserveCase` is set. Does nothing (returns `false`) on a block, or on a revealed square unless `force` is set. Throws `RangeError` if `value` is `"-"` or `"."`. |
+| `clearValue(ref, options?)`      | `CellRef`, `{ force?: boolean }`       | `boolean` | Same as `setValue(ref, "", options)`.                                                                                                                                                                                                                          |
+| `clear(options?)`                | `{ includeRevealed?: boolean }`        | `void`    | Empties every square except revealed ones. With `includeRevealed: true`, empties every square and removes all flags except `CIRCLED`.                                                                                                                          |
+| `isFilled`                       |                                        | `boolean` | `true` if every non-block square has a value.                                                                                                                                                                                                                  |
+| `isSolved`                       |                                        | `boolean` | `true` if every non-block square is correct. Throws `PuzLockedError` if the solution is unavailable.                                                                                                                                                           |
+| `isCorrect(ref)`                 | `CellRef`                              | `boolean` | `true` if the value matches the solution (case-insensitive). Empty is never correct. For a rebus square, the full answer or its first letter both count. Throws `PuzLockedError` if the solution is unavailable.                                               |
 
-puzzle.isFilled;
-puzzle.isSolved;
-puzzle.isCorrect(0);
-```
+`SetValueOptions`:
 
-Revealed squares are locked: `setValue` and `clearValue` leave them alone unless you pass `{ force: true }`.
+| Option         | Type      | Default | Meaning                                             |
+| -------------- | --------- | ------- | --------------------------------------------------- |
+| `force`        | `boolean` | `false` | Allow changing a square that has been revealed.     |
+| `preserveCase` | `boolean` | `false` | Store the value as given instead of uppercasing it. |
 
 ### Check and reveal
 
-```ts
-puzzle.checkCell(0); // => { checked: [0], incorrect: [] }
-puzzle.checkClue({ direction: "across", number: 1 });
-puzzle.checkPuzzle();
-puzzle.checkCells([0, 1, 2]);
+Each of these throws `PuzLockedError` if the solution is unavailable, `RangeError` for a square outside the grid, and `RangeError` for a clue that doesn't exist.
 
-puzzle.revealCell(0);
-puzzle.revealClue({ direction: "down", number: 4 });
-puzzle.revealPuzzle();
+| Method              | Input                     | Returns       |
+| ------------------- | ------------------------- | ------------- |
+| `checkCell(ref)`    | `CellRef`                 | `CheckResult` |
+| `checkCells(refs)`  | any iterable of `CellRef` | `CheckResult` |
+| `checkClue(clue)`   | `{ direction, number }`   | `CheckResult` |
+| `checkPuzzle()`     |                           | `CheckResult` |
+| `revealCell(ref)`   | `CellRef`                 | `number[]`    |
+| `revealCells(refs)` | any iterable of `CellRef` | `number[]`    |
+| `revealClue(clue)`  | `{ direction, number }`   | `number[]`    |
+| `revealPuzzle()`    |                           | `number[]`    |
+
+**Checking** looks only at squares that have a value (blocks and empty squares are skipped). It updates each square's flags:
+
+- Wrong value: sets `INCORRECT`.
+- Correct value on a square marked `INCORRECT`: removes `INCORRECT` and sets `PREVIOUSLY_INCORRECT`.
+- Correct value otherwise: no change.
+
+It returns `{ checked, incorrect }`. `checked` lists the indexes of the squares that were checked, and `incorrect` lists the ones that were wrong.
+
+**Revealing** sets each non-block square's value to the answer and sets its `REVEALED` flag. A revealed square can't be changed by `setValue` or `clearValue` unless you pass `force: true`. It returns the indexes of the squares revealed.
+
+```ts
+puzzle.checkPuzzle(); // { checked: [0, 1, 5], incorrect: [1] }
+puzzle.revealClue({ direction: "down", number: 4 }); // [3, 8, 13, 18, 23]
 ```
 
-Checking only looks at filled squares and updates their GEXT flags:
+### Square flags
 
-| Result  | Flags                                                                    |
-| ------- | ------------------------------------------------------------------------ |
-| correct | If the square was `INCORRECT`, that flag becomes `PREVIOUSLY_INCORRECT`. |
-| wrong   | `INCORRECT` is set.                                                      |
+Each square has a bitmask of flags (stored in the file's `GEXT` section). The flags are listed under [`CellFlag`](#constants).
 
-Revealing fills in the answer and sets `REVEALED`.
-
-### Flags
-
-```ts
-import { CellFlag } from "puzkit";
-puzzle.setCircled(0, true);
-puzzle.hasFlag(0, CellFlag.INCORRECT);
-puzzle.setFlag(0, CellFlag.REVEALED, false);
-puzzle.getFlags(0); // raw bitmask
-```
+| Method                     | Input                            | Returns   | Meaning                                                 |
+| -------------------------- | -------------------------------- | --------- | ------------------------------------------------------- |
+| `getFlags(ref)`            | `CellRef`                        | `number`  | The raw bitmask.                                        |
+| `hasFlag(ref, flag)`       | `CellRef`, `CellFlag`            | `boolean` |                                                         |
+| `setFlag(ref, flag, on)`   | `CellRef`, `CellFlag`, `boolean` | `void`    | Turns one flag on (`true`) or off (`false`).            |
+| `isCircled(ref)`           | `CellRef`                        | `boolean` | Shortcut for `hasFlag(ref, CellFlag.CIRCLED)`.          |
+| `setCircled(ref, circled)` | `CellRef`, `boolean`             | `void`    | Shortcut for `setFlag(ref, CellFlag.CIRCLED, circled)`. |
+| `isRevealed(ref)`          | `CellRef`                        | `boolean` | Shortcut for `hasFlag(ref, CellFlag.REVEALED)`.         |
 
 ### Timer
 
+The timer tracks solving time in whole seconds. While it runs, it counts in memory. Saving writes the total up to `now`, and records whether it was running.
+
+| Method / property                   | Input                              | Returns                                 | Behaviour                                                                                                                                                                     |
+| ----------------------------------- | ---------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timer`                             |                                    | `{ seconds: number; running: boolean }` | Same as `getTimer()`.                                                                                                                                                         |
+| `getTimer(now?)`                    | `number` (ms)                      | `{ seconds: number; running: boolean }` | Total seconds as of `now`, rounded down.                                                                                                                                      |
+| `startTimer(now?)`                  | `number` (ms)                      | `void`                                  | Starts counting from `now`. Does nothing if already running.                                                                                                                  |
+| `stopTimer(now?)`                   | `number` (ms)                      | `void`                                  | Adds the time since start to the total and stops. Does nothing if already stopped.                                                                                            |
+| `setTimer(seconds, running?, now?)` | `number`, `boolean`, `number` (ms) | `void`                                  | Sets the total to `seconds`. `running` defaults to the current state; if `true`, counting continues from `now`. Throws `RangeError` if `seconds` is negative or not a number. |
+| `resetTimer()`                      |                                    | `void`                                  | Stops the timer and sets it to 0.                                                                                                                                             |
+
 ```ts
-puzzle.timer; // { seconds, running }
-puzzle.startTimer();
-puzzle.stopTimer();
-puzzle.setTimer(90, /* running */ false);
-puzzle.resetTimer();
+puzzle.startTimer(1_000_000);
+puzzle.getTimer(1_065_000); // { seconds: 65, running: true }
+puzzle.stopTimer(1_065_000);
+puzzle.timer; // { seconds: 65, running: false }
 ```
 
-A running timer keeps counting in memory, and the elapsed time is added in when you save. If you load a file whose timer was saved as running, it resumes from load time. Every timer method takes an optional `now` (ms) argument, which makes tests deterministic.
+If a file was saved with the timer running, loading it restarts the timer from the load time (`ReadOptions.now`).
 
-### Locked (scrambled) solutions
+### Locked solutions
+
+Some files ship with the solution scrambled under a 4-digit key. A key is a number (`1234`, or `42`, which becomes `"0042"`) or a 4-digit string (`"1234"`). Any other key throws `RangeError`.
+
+| Method / property | Input              | Returns   | Behaviour                                                                                                                                                                                |
+| ----------------- | ------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `isScrambled`     |                    | `boolean` | `true` if the solution is locked.                                                                                                                                                        |
+| `hasSolution`     |                    | `boolean` | `false` if the file has no solution at all.                                                                                                                                              |
+| `unscramble(key)` | `number \| string` | `boolean` | Unlocks the solution. Returns `false` (and changes nothing) if the key is wrong, and `true` if it worked or the puzzle wasn't locked.                                                    |
+| `scramble(key)`   | `number \| string` | `void`    | Locks the solution. Throws `PuzError` if the solution contains anything other than A–Z letters or has fewer than 12 letters. Throws `PuzLockedError` if it is already locked or missing. |
+
+---
+
+## Types
+
+All types are exported from `"puzkit"`.
 
 ```ts
-puzzle.isScrambled; // true
-puzzle.unscramble(1234); // true if the key matches the file's checksum
-puzzle.scramble(1234); // lock it again
+type CellRef = number | { row: number; col: number };
+type Direction = "across" | "down";
 ```
 
-Checking, revealing, or reading solutions on a locked puzzle throws `PuzLockedError`. Players can still make entries.
+### Cell
 
-### Metadata
+Returned by `getCell` and `getCells`.
 
-`title`, `author`, `copyright` and `notes` can be read and set. `version`, `isDiagramless`, `hasSolution` and `sectionTitles` are read-only.
+```ts
+interface Cell {
+  index: number; // row * width + col
+  row: number;
+  col: number;
+  isBlock: boolean;
+  number: number | undefined; // printed clue number in this square
+  across: number | undefined; // index into puzzle.clues.across of the across clue through this square
+  down: number | undefined; // index into puzzle.clues.down of the down clue through this square
+  value: string; // "" if empty; may be several letters (rebus)
+  solution: string | undefined; // undefined while the solution is unavailable
+  flags: number; // CellFlag bitmask
+  isCircled: boolean;
+  isRevealed: boolean;
+  isIncorrect: boolean; // marked wrong by the last check
+  wasIncorrect: boolean; // was marked wrong, then fixed
+  isRebus: boolean; // the answer is more than one letter
+}
+```
 
-## Low-level API
+### Clue
 
-When you need the file exactly as stored, `parsePuz(bytes)` returns `{ raw, checksums }`, where `raw` is a plain `RawPuz` object. `serializePuz(raw)` turns one back into bytes. Also exported: `computeLayout` (grid numbering), `cksumRegion`, `scrambleSolution` / `unscrambleSolution`, `encode` / `decode`, and the format constants.
+Returned by `clues`, `allClues`, `getClue` and `cluesAt`.
 
-## Text encoding
+```ts
+interface Clue {
+  number: number; // printed number
+  direction: Direction;
+  text: string;
+  cells: readonly number[]; // square indexes of the answer, in reading order
+  index: number; // position in allClues (the order clues are stored in the file)
+  listIndex: number; // position in clues.across or clues.down
+}
+```
 
-Files before v2.0 are decoded as Windows-1252. That is ISO-8859-1 plus the smart quotes and dashes that real files contain, so every byte round-trips. Characters that can't be encoded are written as an ASCII equivalent or `?`. v2.0 files use UTF-8.
+### CheckResult
+
+```ts
+interface CheckResult {
+  checked: readonly number[]; // squares that had a value and were checked
+  incorrect: readonly number[]; // subset of `checked` that were wrong
+}
+```
+
+### CreatePuzzleOptions
+
+```ts
+interface CreatePuzzleOptions {
+  grid: readonly string[]; // solution rows, all the same length; "." for blocks
+  clues: { across: readonly string[]; down: readonly string[] }; // in number order
+  title?: string;
+  author?: string;
+  copyright?: string;
+  notes?: string;
+  rebus?: Record<number, string>; // multi-letter answers by square index; grid holds the first letter
+  circled?: readonly number[]; // square indexes to circle
+  version?: string; // default "1.3"; use "2.0" for UTF-8 text
+}
+```
+
+### ChecksumReport
+
+```ts
+interface ChecksumReport {
+  valid: boolean;
+  mismatches: {
+    name: string; // "file", "cib", "masked", or "section:<TITLE>"
+    stored: number | string; // value found in the file
+    computed: number | string; // value it should have been
+  }[];
+}
+```
+
+### RawPuz
+
+The file's contents as a plain object, with no checksums. It is used by `toRaw`, `fromRaw`, `parsePuz` and `serializePuz`.
+
+```ts
+interface RawPuz {
+  version: string; // e.g. "1.3" (at most 3 characters)
+  width: number; // 1-255
+  height: number; // 1-255
+  puzzleType: number; // PuzzleType.NORMAL or PuzzleType.DIAGRAMLESS
+  solutionState: number; // SolutionState value
+  scrambledChecksum: number; // used to verify an unscramble key
+  reserved1C: number; // unused header bytes, kept as-is
+  reserved20: Uint8Array; // unused header bytes (12), kept as-is
+  solution: string; // one character per square, row by row; "." = block
+  state: string; // player's entries, one character per square; "-" = empty, "." = block
+  title: string;
+  author: string;
+  copyright: string;
+  clues: string[]; // in allClues order
+  notes: string;
+  sections: { title: string; data: Uint8Array }[]; // extra sections, e.g. GEXT, LTIM
+}
+```
+
+---
+
+## Node.js helpers (`puzkit/node`)
+
+These use `node:fs` and live in a separate entry point, so the main `"puzkit"` import works without Node.js. `puzkit/node` also re-exports `Puzzle`.
+
+| Function                                           | Input                                                                                               | Returns                                     |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `readPuzzleFile(path, options?)`                   | file path, `ReadOptions`                                                                            | `Promise<Puzzle>`                           |
+| `streamPuzzleFile(path, options?)`                 | file path, `ReadOptions`. Reads the file as a stream.                                               | `Promise<Puzzle>`                           |
+| `writePuzzleFile(path, puzzle, options?)`          | file path, `Puzzle`, `{ now?: number }`                                                             | `Promise<void>`                             |
+| `writePuzzleStream(destination, puzzle, options?)` | a Node `Writable` or a file path, `Puzzle`, `{ now?: number }`. Resolves when writing has finished. | `Promise<void>`                             |
+| `toNodeReadable(puzzle, options?)`                 | `Puzzle`, `{ now?: number }`                                                                        | Node `Readable` that emits the file's bytes |
+
+File system errors (missing file, no permission) are passed through unchanged.
+
+---
+
+## Low-level functions
+
+You don't need these for normal use. They give direct access to the file format.
+
+| Function                                            | Input                                                                                  | Returns                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parsePuz(bytes, options?)`                         | `Uint8Array`, `{ strict?: boolean }`                                                   | `{ raw: RawPuz; checksums: ChecksumReport }`. Throws like `Puzzle.fromBytes`.                                                                                                                                                                                                             |
+| `serializePuz(raw)`                                 | `RawPuz`                                                                               | `Uint8Array` with all checksums computed. Throws `PuzError` if the size is outside 1–255, `version` is longer than 3 characters, `solution`/`state` are not `width*height` single-byte characters, a section title isn't 4 printable ASCII characters, or a section is over 65,535 bytes. |
+| `computeLayout(solution, width, height)`            | solution string (one character per square, `"."` or `":"` = block), `number`, `number` | `{ squares, across, down }`: the numbering and word positions, with no clue text                                                                                                                                                                                                          |
+| `cksumRegion(data, start?)`                         | `Uint8Array`, starting checksum (default `0`)                                          | `number`: the format's 16-bit checksum                                                                                                                                                                                                                                                    |
+| `encode(text, encoding?)`                           | `string`, `"windows-1252"` (default) or `"utf-8"`                                      | `Uint8Array`                                                                                                                                                                                                                                                                              |
+| `decode(bytes, encoding?)`                          | `Uint8Array`, `"windows-1252"` (default) or `"utf-8"`                                  | `string`                                                                                                                                                                                                                                                                                  |
+| `scrambleSolution(solution, width, height, key)`    | solution string, `number`, `number`, key                                               | scrambled solution `string`                                                                                                                                                                                                                                                               |
+| `unscrambleSolution(scrambled, width, height, key)` | scrambled string, `number`, `number`, key                                              | solution `string`. Doesn't check the key; compare `scrambledChecksum` of the result with `raw.scrambledChecksum`.                                                                                                                                                                         |
+| `scrambledChecksum(solution, width, height)`        | plain solution string, `number`, `number`                                              | `number`                                                                                                                                                                                                                                                                                  |
+| `bytesToBase64(bytes)`                              | `Uint8Array`                                                                           | `string`                                                                                                                                                                                                                                                                                  |
+| `base64ToBytes(base64)`                             | `string`                                                                               | `Uint8Array`. Throws `TypeError` on invalid characters.                                                                                                                                                                                                                                   |
+| `collectBytes(source)`                              | same as `Puzzle.fromStream`'s `source`                                                 | `Promise<Uint8Array>` with all chunks joined                                                                                                                                                                                                                                              |
+
+`computeLayout` returns `squares` items with the `Cell` fields from `index` to `down`. Its `across` and `down` items are the `Clue` fields without `text`.
+
+---
+
+## Constants
+
+```ts
+import {
+  CellFlag,
+  PuzzleType,
+  SolutionState,
+  SectionTitle,
+  BLOCK,
+  DIAGRAMLESS_BLOCK,
+  EMPTY,
+} from "puzkit";
+```
+
+| Constant                        | Value    | Meaning                                                  |
+| ------------------------------- | -------- | -------------------------------------------------------- |
+| `CellFlag.PREVIOUSLY_INCORRECT` | `0x10`   | Was marked wrong, then fixed.                            |
+| `CellFlag.INCORRECT`            | `0x20`   | Marked wrong by a check.                                 |
+| `CellFlag.REVEALED`             | `0x40`   | Answer was revealed.                                     |
+| `CellFlag.CIRCLED`              | `0x80`   | Square is drawn with a circle.                           |
+| `PuzzleType.NORMAL`             | `0x0001` |                                                          |
+| `PuzzleType.DIAGRAMLESS`        | `0x0401` |                                                          |
+| `SolutionState.UNSCRAMBLED`     | `0x0000` |                                                          |
+| `SolutionState.NO_SOLUTION`     | `0x0002` | File has no solution.                                    |
+| `SolutionState.SCRAMBLED`       | `0x0004` | Solution is locked.                                      |
+| `SectionTitle.GRBS` / `.RTBL`   |          | Rebus answers (which squares, and the answer text).      |
+| `SectionTitle.RUSR`             |          | Player's rebus entries.                                  |
+| `SectionTitle.GEXT`             |          | Square flags.                                            |
+| `SectionTitle.LTIM`             |          | Timer.                                                   |
+| `BLOCK`                         | `"."`    | Block character in `solution` / `state`.                 |
+| `DIAGRAMLESS_BLOCK`             | `":"`    | Alternative block character used by diagramless puzzles. |
+| `EMPTY`                         | `"-"`    | Empty square in `state`.                                 |
+
+---
+
+## Errors
+
+Every error this library throws on purpose is one of these classes, except `RangeError` and `TypeError` for invalid arguments.
+
+| Class              | Extends    | Thrown when                                                                                   |
+| ------------------ | ---------- | --------------------------------------------------------------------------------------------- |
+| `PuzError`         | `Error`    | Base class. Also thrown directly for invalid input to `create`, `scramble` or `serializePuz`. |
+| `PuzParseError`    | `PuzError` | The input isn't a readable `.puz` file.                                                       |
+| `PuzChecksumError` | `PuzError` | A checksum is wrong and `strict: true` was used. Has a `report: ChecksumReport` property.     |
+| `PuzLockedError`   | `PuzError` | The operation needs the solution, but it is scrambled or missing.                             |
+
+```ts
+import { Puzzle, PuzParseError } from "puzkit";
+
+try {
+  Puzzle.fromBytes(bytes);
+} catch (e) {
+  if (e instanceof PuzParseError) console.log("Not a .puz file");
+}
+```
+
+---
+
+## How the file is written
+
+- **Exact round trip:** loading a file and saving it unchanged gives back the same bytes. Unknown sections and unused header bytes are kept.
+- **Checksums** are always recomputed on save, so files with bad checksums are repaired when saved.
+- **Extra sections** are only written when needed:
+  - `GEXT` (flags): if any square has a flag, or the file had this section.
+  - `LTIM` (timer): if the time is above 0, the timer is running, or the file had this section.
+  - `RUSR` (rebus entries): if any value is longer than one letter, or the file had this section.
+- **Text encoding:** files below version 2.0 use Windows-1252, which covers Western European letters and curly quotes/dashes. Characters it can't represent are saved as a close ASCII equivalent or `?`. Version 2.0+ files use UTF-8.
+- **Grid characters:** `solution` and `state` are always one byte per square.
+
+---
+
+## Recipes
+
+### React state
+
+```ts
+const [puzzle, setPuzzle] = useState(() => Puzzle.fromBase64(data));
+
+function enter(index: number, letter: string) {
+  const next = puzzle.clone();
+  next.setValue(index, letter);
+  setPuzzle(next);
+}
+```
+
+### React Native / Expo
+
+```ts
+import * as FileSystem from "expo-file-system";
+
+const puzzle = Puzzle.fromBase64(await FileSystem.readAsStringAsync(uri, { encoding: "base64" }));
+await FileSystem.writeAsStringAsync(uri, puzzle.toBase64(), { encoding: "base64" });
+```
+
+### Browser
+
+```ts
+const response = await fetch("/puzzles/monday.puz");
+const puzzle = await Puzzle.fromStream(response.body!);
+
+const blob = new Blob([puzzle.toBytes()], { type: "application/octet-stream" });
+```
+
+### Is it solved?
+
+```ts
+if (puzzle.isFilled && puzzle.isSolved) {
+  puzzle.stopTimer();
+  console.log(`Solved in ${puzzle.timer.seconds}s`);
+}
+```
+
+---
 
 ## Development
 
 ```sh
-npm test          # vitest
-npm run coverage  # enforces 100% line coverage
-npm run typecheck
-npm run build     # tsup -> dist/ (ESM + CJS + .d.ts)
+npm install
+npm test           # run tests (vitest)
+npm run coverage   # tests + coverage; fails below 100% lines / 95% branches
+npm run typecheck  # tsc
+npm run build      # build dist/ (ESM, CommonJS, and .d.ts) with tsup
+npm run format     # prettier
 ```
 
-Tests use small synthetic fixtures in `test/fixtures/`. `sample-locked-1234.puz` was produced by [puzpy](https://github.com/alexdej/puzpy) to check compatibility. To round-trip real puzzles, drop `.puz` files into `test/fixtures/local/`. That folder is gitignored, since published puzzles are copyrighted, and `local-fixtures.test.ts` picks them up automatically.
+Source layout:
 
-## References
+| File                                              | Contents                                                |
+| ------------------------------------------------- | ------------------------------------------------------- |
+| `src/index.ts`                                    | Public exports.                                         |
+| `src/puzzle.ts`                                   | The `Puzzle` class.                                     |
+| `src/node.ts`                                     | `puzkit/node` helpers.                                  |
+| `src/reader.ts`                                   | `parsePuz`: bytes → `RawPuz`, checksum verification.    |
+| `src/writer.ts`                                   | `serializePuz`: `RawPuz` → bytes.                       |
+| `src/checksum.ts`                                 | Checksum algorithms.                                    |
+| `src/grid.ts`                                     | `computeLayout`: numbering and word positions.          |
+| `src/sections.ts`                                 | Reading/writing the GRBS, RTBL, RUSR and LTIM sections. |
+| `src/scramble.ts`                                 | Solution locking.                                       |
+| `src/encoding.ts`                                 | Windows-1252 / UTF-8 text encoding.                     |
+| `src/base64.ts`, `src/stream.ts`                  | Input/output helpers.                                   |
+| `src/constants.ts`, `src/errors.ts`, `src/raw.ts` | Constants, error classes, `RawPuz`.                     |
 
-- [PUZ file format](https://code.google.com/archive/p/puz/wikis/FileFormat.wiki)
-- [puzpy](https://github.com/alexdej/puzpy)
+Tests are in `test/`, using small generated `.puz` files in `test/fixtures/`. `sample-locked-1234.puz` was locked by [puzpy](https://github.com/alexdej/puzpy), a Python `.puz` library, to confirm compatibility. To also test real puzzles, put `.puz` files in `test/fixtures/local/`. That folder is gitignored because published puzzles are copyrighted, and its files are tested automatically.
+
+Format reference: [PUZ file format](https://code.google.com/archive/p/puz/wikis/FileFormat.wiki).
 
 ## License
 
