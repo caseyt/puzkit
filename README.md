@@ -61,21 +61,25 @@ await writePuzzleFile("monday.puz", puzzle);
 
 ## Key concepts
 
-**Squares.** The grid has `width × height` squares, numbered row by row from `0`. The square at `row`, `col` has index `row * width + col`. Every method that takes a square takes this index. Use `toIndex({ row, col })` and `toRowCol(index)` to convert. An index outside the grid throws `RangeError`.
+**Squares** 
+- The grid has `width × height` squares, numbered row by row from `0`.
+- The square at `row`, `col` has index `row * width + col`.
 
-**Blocks.** Black squares are called blocks. They have no value, are skipped by check and reveal, and `setSquareValue` on a block does nothing (it returns `false`).
+**Values** 
+- A square's value is a string.
+- An empty square is `""`.
+- A value longer than one letter (like `"STAR"`) is a _rebus_ entry.
 
-**Clues.** A clue is identified by its `direction` (`"across"` or `"down"`) and its printed `number`. Methods that act on a clue take `{ direction, number }`. Any `Clue` object you got from the puzzle also works.
+**Blocks** 
+- Black squares are called blocks.
+- They have no value, are skipped by check and reveal functions, and `setSquareValue` on a block does nothing.
 
-**Values.** A square's value is a string. An empty square is `""`. A value longer than one letter (like `"STAR"`) is a _rebus_ entry, which is saved to the file correctly.
+**Clues** 
+- A clue is identified by its `direction` (`"across"` or `"down"`) and its printed `number`.
 
-**Mutability.** A `Puzzle` is changed in place: `setSquareValue`, `checkPuzzle` and the other modifying methods do not return a new puzzle. Call `puzzle.clone()` when you need a separate copy, for example to put a new object into React state.
-
-**Snapshots.** `getCell()`, `getCells()` and `getTimer()` return plain objects describing the puzzle at that moment. They do not update when the puzzle changes.
-
-**The solution.** A file can contain the solution in plain form, in scrambled (locked) form, or not at all. While the solution is unavailable, anything that needs it throws `PuzLockedError`: `check*`, `reveal*`, `isCorrect`, `isSolved` and `scramble`. In that state `getCell().solution` is `undefined`. Entering values always works.
-
-**Time.** Timer methods and the load/save functions take an optional `now`: a time in milliseconds, like `Date.now()`. It defaults to `Date.now()`. Pass it explicitly when you need deterministic results, such as in tests.
+**Mutability** 
+- A `Puzzle` is changed in place: `setSquareValue`, `checkPuzzle` and the other modifying methods do not return a new puzzle.
+- Call `puzzle.clone()` when you need a separate copy, for example to put a new object into React state.
 
 ---
 
@@ -83,14 +87,14 @@ await writePuzzleFile("monday.puz", puzzle);
 
 ### Loading
 
-All loaders return a new `Puzzle`. Loading is lenient: a file with wrong checksums still loads, and the problems are listed in `puzzle.checksums`. Pass `{ strict: true }` to throw instead.
+All loaders return a new `Puzzle`. Loading is lenient: a file with wrong checksums still loads, and the problems are listed in `puzzle.checksums`. Pass `{ strict: true }` to throw and error instead instead.
 
 | Method                                | Input                                                                                                                 | Returns           |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `Puzzle.fromBytes(input, options?)`   | `input`: the whole file as a `Uint8Array`, Node `Buffer`, `ArrayBuffer` or `DataView`                                 | `Puzzle`          |
-| `Puzzle.fromBase64(base64, options?)` | `base64`: the whole file as a base64 string (standard or URL-safe; whitespace is ignored)                             | `Puzzle`          |
+| `Puzzle.fromBytes(input, options?)`   | `input`: puz file as a `Uint8Array`, Node `Buffer`, `ArrayBuffer` or `DataView`                                 | `Puzzle`          |
+| `Puzzle.fromBase64(base64, options?)` | `base64`: puz file as a base64 string (standard or URL-safe; whitespace is ignored)                             | `Puzzle`          |
 | `Puzzle.fromStream(source, options?)` | `source`: a web `ReadableStream<Uint8Array>`, a Node.js `Readable`, or any sync/async iterable of `Uint8Array` chunks | `Promise<Puzzle>` |
-| `Puzzle.fromRaw(raw, options?)`       | `raw`: a [`RawPuz`](#rawpuz) object (it is copied, not kept)                                                          | `Puzzle`          |
+| `Puzzle.fromRaw(raw, options?)`       | `raw`: a [`RawPuz`](#rawpuz) object                                                          | `Puzzle`          |
 | `Puzzle.create(options)`              | `options`: a [`CreatePuzzleOptions`](#createpuzzleoptions) object                                                     | `Puzzle`          |
 
 `options` for the first three is a `ReadOptions` object:
@@ -99,11 +103,6 @@ All loaders return a new `Puzzle`. Loading is lenient: a file with wrong checksu
 | -------- | --------- | ------------ | ----------------------------------------------------------------------------------------------- |
 | `strict` | `boolean` | `false`      | Throw `PuzChecksumError` if any checksum is wrong, and `PuzParseError` if a section is cut off. |
 | `now`    | `number`  | `Date.now()` | If the file's timer was saved as running, it counts from this time.                             |
-
-`fromRaw` accepts only `{ now?: number }`.
-
-**Errors:** `PuzParseError` if the input is not a `.puz` file, or if the file is cut off before the end of its clues.
-
 `Puzzle.create` builds a new, empty puzzle from a solution grid and clues:
 
 ```ts
@@ -117,17 +116,13 @@ const puzzle = Puzzle.create({
 });
 ```
 
-**Errors:** `PuzError` if the grid is empty, if the rows have different lengths, if the number of across or down clues doesn't match the grid, or if a `rebus` index is not a letter square.
-
 ### Saving
-
-Saving doesn't change the puzzle. If the timer is running, the time saved includes the run so far.
 
 | Method                      | Returns                      | Notes                                                                                    |
 | --------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
-| `puzzle.toBytes(options?)`  | `Uint8Array`                 | The complete `.puz` file.                                                                |
-| `puzzle.toBase64(options?)` | `string`                     | The complete `.puz` file, base64 encoded.                                                |
-| `puzzle.toStream(options?)` | `ReadableStream<Uint8Array>` | Web stream. Throws `Error` if the runtime lacks `ReadableStream`; use `toBytes()` there. |
+| `puzzle.toBytes(options?)`  | `Uint8Array`                 | The `.puz` file.                                                                |
+| `puzzle.toBase64(options?)` | `string`                     | The `.puz` file, base64 encoded.                                                |
+| `puzzle.toStream(options?)` | `ReadableStream<Uint8Array>` | Web stream. |
 | `puzzle.toRaw(options?)`    | [`RawPuz`](#rawpuz)          | Plain object form of the file, with no checksums.                                        |
 | `puzzle.clone()`            | `Puzzle`                     | A fully independent copy, including a running timer.                                     |
 
@@ -160,7 +155,7 @@ puzzle.checksums;
 | ---------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `toIndex({ row, col })`      | `RowCol`                          | `number`: the index of the square at that row and column                                        |
 | `toRowCol(index)`            | `number`                          | `RowCol`: `{ row, col }` of that square                                                         |
-| `getCell(index)`             | `number`                          | [`Cell`](#cell) snapshot                                                                        |
+| `getCell(index)`             | `number`                          | [`Cell`](#cell)                                                                        |
 | `getCells()`                 |                                   | `Cell[]`: every square, in index order                                                          |
 | `isBlock(index)`             | `number`                          | `boolean`                                                                                       |
 | `clues`                      |                                   | `{ across: Clue[]; down: Clue[] }`, each in number order                                        |
