@@ -6,7 +6,7 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
-  // Share one copy of Puzzle between "puzkit" and "puzkit/node" in the CJS build too.
+  // Share one copy of Puzzle between "puzts" and "puzts/node" in the CJS build too.
   splitting: true,
   keepNames: true,
   target: "es2020",

@@ -92,7 +92,7 @@ describe("streams", () => {
 });
 
 describe("node helpers", () => {
-  const dir = mkdtempSync(join(tmpdir(), "puzkit-"));
+  const dir = mkdtempSync(join(tmpdir(), "puzts-"));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   it("writes and reads files", async () => {

@@ -1,4 +1,4 @@
-# puzkit
+# puzts
 
 A TypeScript library for reading, modifying and writing Across Lite `**.puz**` crossword files.
 
@@ -7,7 +7,7 @@ A TypeScript library for reading, modifying and writing Across Lite `**.puz**` c
 - Checksums are verified when reading and recomputed when writing.
 
 ```sh
-npm install puzkit
+npm install puzts
 ```
 
 ## Contents
@@ -21,7 +21,7 @@ npm install puzkit
 ## Quick start
 
 ```ts
-import { readPuzzleFile, writePuzzleFile } from "puzkit/node";
+import { readPuzzleFile, writePuzzleFile } from "puzts/node";
 
 const puzzle = await readPuzzleFile("monday.puz");
 
@@ -63,7 +63,7 @@ A `Puzzle` is changed in place. Methods like `setSquareValue` and `checkPuzzle` 
 
 Static methods that create a `Puzzle`.
 
-Import: `import { Puzzle } from "puzkit"`.
+Import: `import { Puzzle } from "puzts"`.
 
 
 | Name                                  | Arguments                                                                            | Returns           | Description                                      |
@@ -329,7 +329,7 @@ A key is a number (`1234`, or `42`, which becomes `"0042"`) or a 4-digit string 
 
 ## Types
 
-All types are exported from `"puzkit"`.
+All types are exported from `"puzts"`.
 
 ### Square
 
@@ -450,7 +450,7 @@ The file's fields as a plain object, without checksums. Used by `toRaw`, `fromRa
 
 Functions that read and write files with `node:fs`. They live in a separate entry point so the main import works without Node.js.
 
-Import: `import { readPuzzleFile, writePuzzleFile } from "puzkit/node"`. `puzkit/node` also re-exports `Puzzle`.
+Import: `import { readPuzzleFile, writePuzzleFile } from "puzts/node"`. `puzts/node` also re-exports `Puzzle`.
 
 
 | Name                                               | Arguments                                                         | Returns           | Description                                                            |
@@ -468,7 +468,7 @@ File system errors, such as a missing file, are passed through unchanged.
 
 Functions for working with the file format directly. You don't need these for normal use.
 
-Import: `import { parsePuz, serializePuz } from "puzkit"`.
+Import: `import { parsePuz, serializePuz } from "puzts"`.
 
 
 | Name                                                | Arguments                                  | Returns                                      | Description                                                                                                                  |
@@ -498,7 +498,7 @@ Import: `import { parsePuz, serializePuz } from "puzkit"`.
 
 ## Constants
 
-Import: `import { SquareFlag, PuzzleType, SolutionState, SectionTitle, BLOCK, DIAGRAMLESS_BLOCK, EMPTY } from "puzkit"`.
+Import: `import { SquareFlag, PuzzleType, SolutionState, SectionTitle, BLOCK, DIAGRAMLESS_BLOCK, EMPTY } from "puzts"`.
 
 ### SquareFlag
 
@@ -556,7 +556,7 @@ Import: `import { SquareFlag, PuzzleType, SolutionState, SectionTitle, BLOCK, DI
 
 Every error the library throws on purpose is one of these classes, or a `RangeError` or `TypeError` for an invalid argument.
 
-Import: `import { PuzError, PuzParseError, PuzChecksumError, PuzLockedError } from "puzkit"`.
+Import: `import { PuzError, PuzParseError, PuzChecksumError, PuzLockedError } from "puzts"`.
 
 
 | Name               | Extends    | Description                                                                                                      |
@@ -568,7 +568,7 @@ Import: `import { PuzError, PuzParseError, PuzChecksumError, PuzLockedError } fr
 
 
 ```ts
-import { Puzzle, PuzParseError } from "puzkit";
+import { Puzzle, PuzParseError } from "puzts";
 
 try {
   Puzzle.fromBytes(bytes);
