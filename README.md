@@ -10,14 +10,6 @@ A TypeScript library for reading, modifying and writing Across Lite `**.puz**` c
 npm install puzts
 ```
 
-## Contents
-
-- [Quick start](#quick-start)
-- [Concepts](#concepts)
-- **Puzzle**: [Loading](#loading) · [Saving](#saving) · [Metadata](#metadata) · [Grid and clues](#grid-and-clues) · [Values](#values) · [Check and reveal](#check-and-reveal) · [Square flags](#square-flags) · [Timer](#timer) · [Locked solutions](#locked-solutions)
-- **Types**: `[Square](#square)` · `[Clue](#clue)` · `[CheckResult](#checkresult)` · `[Timer](#timer-1)` · `[CreatePuzzleOptions](#createpuzzleoptions)` · `[ChecksumReport](#checksumreport)` · `[RawPuz](#rawpuz)`
-- **More**: [Node.js helpers](#nodejs-helpers) · [Low-level functions](#low-level-functions) · [Constants](#constants) · [Errors](#errors) · [Saving rules](#saving-rules) · [Recipes](#recipes) · [Development](#development)
-
 ## Quick start
 
 ```ts
