@@ -1,6 +1,6 @@
 {
   "name": "puzkit",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Read, modify, and write Across Lite .puz crossword files. Zero dependencies, fully typed, runs in Node, browsers, and React Native.",
   "license": "MIT",
   "repository": {
