@@ -5,11 +5,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/caseyt/puzkit.git"
+    "url": "git+https://github.com/caseyt/puzts.git"
   },
-  "homepage": "https://github.com/caseyt/puzkit#readme",
+  "homepage": "https://github.com/caseyt/puzts#readme",
   "bugs": {
-    "url": "https://github.com/caseyt/puzkit/issues"
+    "url": "https://github.com/caseyt/puzts/issues"
   },
   "type": "module",
   "sideEffects": false,
