@@ -149,6 +149,15 @@ describe("serializePuz", () => {
     expect(changed.subarray(0, 0x34)).toEqual(bytes.subarray(0, 0x34));
   });
 
+  it("round-trips a version that fills all 4 header bytes", () => {
+    const bytes = serializePuz({ ...base(), version: "1.2c" });
+    expect([...bytes.subarray(0x18, 0x1c)]).toEqual([0x31, 0x2e, 0x32, 0x63]);
+    const { raw, checksums } = parsePuz(bytes);
+    expect(raw.version).toBe("1.2c");
+    expect(checksums.valid).toBe(true);
+    expect(serializePuz(raw)).toEqual(bytes);
+  });
+
   it("writes UTF-8 strings for version 2.0", () => {
     const raw = {
       ...base(),

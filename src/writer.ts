@@ -10,8 +10,10 @@ export function serializePuz(raw: RawPuz): Uint8Array {
   if (raw.width < 1 || raw.width > 255 || raw.height < 1 || raw.height > 255) {
     throw new PuzError(`Invalid grid size ${raw.width}x${raw.height}`);
   }
-  if (raw.version.length > 3)
-    throw new PuzError(`Version "${raw.version}" is longer than 3 characters`);
+  // The header has 4 bytes for the version: usually "1.3" plus a NUL, but some
+  // files use all four (e.g. "1.2c").
+  if (raw.version.length > 4)
+    throw new PuzError(`Version "${raw.version}" is longer than 4 characters`);
 
   const encoding = encodingForVersion(raw.version);
   const solution = encode(raw.solution);
